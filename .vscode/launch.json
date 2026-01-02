@@ -1,0 +1,101 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    // =====================================
+    // Extension Configurations
+    // =====================================
+    {
+      "name": "Extension: Run",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/chitshare.extension"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/chitshare.extension/dist/**/*.js"
+      ],
+      "preLaunchTask": "Extension: Watch"
+    },
+    {
+      "name": "Extension: Debug",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/chitshare.extension"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/chitshare.extension/dist/**/*.js"
+      ],
+      "sourceMaps": true,
+      "preLaunchTask": "Extension: Watch"
+    },
+    {
+      "name": "Extension: Debug Tests",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}/chitshare.extension",
+        "--extensionTestsPath=${workspaceFolder}/chitshare.extension/out/test"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/chitshare.extension/out/**/*.js"
+      ],
+      "sourceMaps": true,
+      "preLaunchTask": "Extension: Compile Tests"
+    },
+
+    // =====================================
+    // Server Configurations
+    // =====================================
+    {
+      "name": "Server: Run Dev",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["--bun", "next", "dev"],
+      "cwd": "${workspaceFolder}/chitshare.server",
+      "console": "integratedTerminal",
+      "serverReadyAction": {
+        "pattern": "- Local:.+(https?://\\S+)",
+        "uriFormat": "%s",
+        "action": "openExternally"
+      }
+    },
+    {
+      "name": "Server: Debug",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["--bun", "--inspect", "next", "dev"],
+      "cwd": "${workspaceFolder}/chitshare.server",
+      "console": "integratedTerminal",
+      "serverReadyAction": {
+        "pattern": "- Local:.+(https?://\\S+)",
+        "uriFormat": "%s",
+        "action": "openExternally"
+      }
+    },
+    {
+      "name": "Server: Run Production",
+      "type": "node",
+      "request": "launch",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["--bun", "next", "start"],
+      "cwd": "${workspaceFolder}/chitshare.server",
+      "console": "integratedTerminal",
+      "preLaunchTask": "Server: Build"
+    }
+  ],
+  "compounds": [
+    {
+      "name": "Full Stack: Run All",
+      "configurations": ["Extension: Run", "Server: Run Dev"],
+      "stopAll": true
+    },
+    {
+      "name": "Full Stack: Debug All",
+      "configurations": ["Extension: Debug", "Server: Debug"],
+      "stopAll": true
+    }
+  ]
+}

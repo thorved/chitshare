@@ -1,0 +1,13 @@
+{
+  "recommendations": [
+    // Extension Development
+    "dbaeumer.vscode-eslint",
+    
+    // Server Development
+    "biomejs.biome",
+    "bradlc.vscode-tailwindcss",
+    
+    // General
+    "esbenp.prettier-vscode"
+  ]
+}

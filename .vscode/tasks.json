@@ -1,0 +1,175 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    // =====================================
+    // Extension Tasks
+    // =====================================
+    {
+      "label": "Extension: Watch",
+      "dependsOn": [
+        "Extension: Watch TypeScript",
+        "Extension: Watch esbuild"
+      ],
+      "presentation": {
+        "reveal": "never"
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    },
+    {
+      "label": "Extension: Watch esbuild",
+      "type": "shell",
+      "command": "npm run watch:esbuild",
+      "options": {
+        "cwd": "${workspaceFolder}/chitshare.extension"
+      },
+      "group": "build",
+      "problemMatcher": {
+        "owner": "esbuild",
+        "fileLocation": ["relative", "${workspaceFolder}/chitshare.extension"],
+        "pattern": {
+          "regexp": "^(.*):(\\d+):(\\d+):\\s+(error|warning):\\s+(.*)$",
+          "file": 1,
+          "line": 2,
+          "column": 3,
+          "severity": 4,
+          "message": 5
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "\\[watch\\] build started",
+          "endsPattern": "\\[watch\\] build finished"
+        }
+      },
+      "isBackground": true,
+      "presentation": {
+        "group": "extension-watch",
+        "reveal": "never"
+      }
+    },
+    {
+      "label": "Extension: Watch TypeScript",
+      "type": "shell",
+      "command": "npm run watch:tsc",
+      "options": {
+        "cwd": "${workspaceFolder}/chitshare.extension"
+      },
+      "group": "build",
+      "problemMatcher": "$tsc-watch",
+      "isBackground": true,
+      "presentation": {
+        "group": "extension-watch",
+        "reveal": "never"
+      }
+    },
+    {
+      "label": "Extension: Compile",
+      "type": "shell",
+      "command": "npm run compile",
+      "options": {
+        "cwd": "${workspaceFolder}/chitshare.extension"
+      },
+      "group": "build",
+      "problemMatcher": ["$tsc", "$esbuild"]
+    },
+    {
+      "label": "Extension: Compile Tests",
+      "type": "shell",
+      "command": "npm run compile-tests",
+      "options": {
+        "cwd": "${workspaceFolder}/chitshare.extension"
+      },
+      "group": "build",
+      "problemMatcher": "$tsc"
+    },
+    {
+      "label": "Extension: Package",
+      "type": "shell",
+      "command": "npm run package",
+      "options": {
+        "cwd": "${workspaceFolder}/chitshare.extension"
+      },
+      "group": "build",
+      "problemMatcher": ["$tsc", "$esbuild"]
+    },
+    {
+      "label": "Extension: Lint",
+      "type": "shell",
+      "command": "npm run lint",
+      "options": {
+        "cwd": "${workspaceFolder}/chitshare.extension"
+      },
+      "problemMatcher": "$eslint-stylish"
+    },
+
+    // =====================================
+    // Server Tasks
+    // =====================================
+    {
+      "label": "Server: Dev",
+      "type": "shell",
+      "command": "bun run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/chitshare.server"
+      },
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": {
+          "regexp": "^(.*)$"
+        },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Starting...",
+          "endsPattern": "Ready in"
+        }
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Server: Build",
+      "type": "shell",
+      "command": "bun run build",
+      "options": {
+        "cwd": "${workspaceFolder}/chitshare.server"
+      },
+      "group": "build",
+      "problemMatcher": []
+    },
+    {
+      "label": "Server: Start",
+      "type": "shell",
+      "command": "bun run start",
+      "options": {
+        "cwd": "${workspaceFolder}/chitshare.server"
+      },
+      "dependsOn": "Server: Build",
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated"
+      }
+    },
+    {
+      "label": "Server: Lint",
+      "type": "shell",
+      "command": "bun run lint",
+      "options": {
+        "cwd": "${workspaceFolder}/chitshare.server"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "Server: Format",
+      "type": "shell",
+      "command": "bun run format",
+      "options": {
+        "cwd": "${workspaceFolder}/chitshare.server"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

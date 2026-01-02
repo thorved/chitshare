@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+out/
+
+# TypeScript
+*.tsbuildinfo
+
+# VS Code test
+.vscode-test/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Package files
+*.vsix
