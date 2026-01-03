@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import ChatSidebar from "./chat-sidebar";
 import MobileNav from "./mobile-nav";
 import { User } from "@prisma/client";
+import { UserProvider } from "../user-context";
 
 interface ChatLayoutClientProps {
   children: React.ReactNode;
@@ -22,22 +23,24 @@ export default function ChatLayoutClient({ children, user }: ChatLayoutClientPro
     (pathname.includes("/groups/") && !pathname.includes("/new"));
 
   return (
-    <div className="h-screen flex overflow-hidden">
-      {/* Sidebar - hidden on mobile, shown on md+ */}
-      <div className="hidden md:block">
-        <ChatSidebar user={user} className="w-80" />
+    <UserProvider user={user}>
+      <div className="h-screen flex overflow-hidden">
+        {/* Sidebar - hidden on mobile, shown on md+ */}
+        <div className="hidden md:block">
+          <ChatSidebar user={user} className="w-80" />
+        </div>
+        
+        <main 
+          className={`flex-1 min-h-0 flex flex-col overflow-hidden ${
+            isChatOpen ? "pb-0" : "pb-14"
+          } md:pb-0`}
+        >
+          {children}
+        </main>
+        
+        {/* Mobile bottom nav - hidden when a chat is open */}
+        {!isChatOpen && <MobileNav />}
       </div>
-      
-      <main 
-        className={`flex-1 min-h-0 flex flex-col overflow-hidden ${
-          isChatOpen ? "pb-0" : "pb-14"
-        } md:pb-0`}
-      >
-        {children}
-      </main>
-      
-      {/* Mobile bottom nav - hidden when a chat is open */}
-      {!isChatOpen && <MobileNav />}
-    </div>
+    </UserProvider>
   );
 }

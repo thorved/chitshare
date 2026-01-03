@@ -15,20 +15,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
+import { useUser } from "../../user-context";
+import { saveMessages, getCachedMessages, Message as StorageMessage } from "@/lib/chat-storage";
 
-interface Message {
-  id: string;
-  content: string;
-  type: string;
-  senderId: string;
-  sender: {
-    id: string;
-    username: string;
-    avatarUrl: string | null;
-  };
-  createdAt: string;
-  status?: "sending" | "sent" | "error";
-}
+interface Message extends StorageMessage {}
 
 interface UserInfo {
   id: string;
@@ -40,13 +30,14 @@ interface UserInfo {
 export default function DirectMessagePage() {
   const params = useParams();
   const userId = params.userId as string;
+  const user = useUser();
+  const currentUserId = user.id;
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null);
   const [newMessage, setNewMessage] = useState("");
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -62,23 +53,16 @@ export default function DirectMessagePage() {
       ?.split("=")[1];
   }, []);
 
-  // Fetch current user FIRST before anything else
+  // Load cached messages first
   useEffect(() => {
-    async function init() {
-      try {
-        const res = await fetch("/api/auth/me", {
-          headers: { Authorization: `Bearer ${getToken()}` },
-        });
-        if (res.ok) {
-          const data = await res.json();
-          setCurrentUserId(data.user.id);
-        }
-      } catch (error) {
-        console.error("Failed to fetch current user:", error);
-      }
+    const cached = getCachedMessages(currentUserId, userId);
+    if (cached.length > 0) {
+      setMessages(cached);
+      setLoading(false);
+      // Wait for render then scroll
+      setTimeout(scrollToBottom, 50);
     }
-    init();
-  }, [getToken]);
+  }, [currentUserId, userId]);
 
   // Check if user is scrolled to bottom
   function isAtBottom() {
@@ -94,7 +78,7 @@ export default function DirectMessagePage() {
     return messagesContainerRef.current.scrollTop < 50;
   }
 
-  // Fetch messages after currentUserId is set
+  // Fetch messages
   const fetchMessages = useCallback(
     async (cursor?: string) => {
       if (!currentUserId) return;
@@ -141,7 +125,11 @@ export default function DirectMessagePage() {
               // Create a map of existing IDs to avoid duplicates if server caught up
               const newMsgIds = new Set(newMsgs.map((m: Message) => m.id));
               const uniquePending = pendingMessages.filter(m => !newMsgIds.has(m.id));
-              return [...newMsgs, ...uniquePending];
+              
+              const combined = [...newMsgs, ...uniquePending];
+              // Save to local storage (only successful ones essentially, but let's save what we have)
+              saveMessages(currentUserId, userId, combined.filter((m: Message) => m.status !== 'error'));
+              return combined;
             });
             
             setUserInfo(data.user);
@@ -244,7 +232,11 @@ export default function DirectMessagePage() {
       status: "sending"
     };
 
-    setMessages((prev) => [...prev, optimisticMessage]);
+    setMessages((prev) => {
+      const updated = [...prev, optimisticMessage];
+      saveMessages(currentUserId!, userId, updated);
+      return updated;
+    });
     setNewMessage("");
     setTimeout(scrollToBottom, 50);
 
@@ -264,12 +256,16 @@ export default function DirectMessagePage() {
         setMessages((prev) => {
            // Check if this message already exists (e.g. from a poll)
            const exists = prev.some(msg => msg.id === data.message.id);
+           let updated;
            if (exists) {
              // If it exists, remove the optimistic one
-             return prev.filter(msg => msg.id !== tempId);
+             updated = prev.filter(msg => msg.id !== tempId);
+           } else {
+             // Otherwise replace it
+             updated = prev.map((msg) => msg.id === tempId ? { ...data.message, status: 'sent' } : msg);
            }
-           // Otherwise replace it
-           return prev.map((msg) => msg.id === tempId ? { ...data.message, status: 'sent' } : msg);
+           saveMessages(currentUserId!, userId, updated);
+           return updated;
         });
         prevMessageCount.current += 1;
       } else {
@@ -295,7 +291,7 @@ export default function DirectMessagePage() {
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
 
-  if (loading || !currentUserId) {
+  if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <p className="text-muted-foreground">Loading conversation...</p>
