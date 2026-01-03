@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/db";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Users, MessagesSquare, Activity, UserPlus } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 export default async function AdminDashboard() {
-  // Fetch stats
   const [userCount, groupCount, messageCount, onlineCount] = await Promise.all([
     prisma.user.count(),
     prisma.group.count(),
@@ -17,83 +19,107 @@ export default async function AdminDashboard() {
       username: true,
       email: true,
       createdAt: true,
+      avatarUrl: true,
       isOnline: true,
     },
   });
 
   const stats = [
-    { label: "Total Users", value: userCount, icon: "👥" },
-    { label: "Online Now", value: onlineCount, icon: "🟢" },
-    { label: "Groups", value: groupCount, icon: "💬" },
-    { label: "Messages", value: messageCount, icon: "📨" },
+    {
+      title: "Total Users",
+      value: userCount,
+      icon: Users,
+      description: "Registered users",
+    },
+    {
+      title: "Active Now",
+      value: onlineCount,
+      icon: Activity,
+      description: "Online users",
+    },
+    {
+      title: "Files Shared",
+      value: 0, // Placeholder if file count query is expensive or table not ready
+      icon: UserPlus,
+      description: "Total uploads",
+    },
+    {
+      title: "Messages",
+      value: messageCount,
+      icon: MessagesSquare,
+      description: "Total messages sent",
+    },
   ];
+
+  // Adjust "Files Shared" or replace with Groups
+  stats[2] = {
+      title: "Groups",
+      value: groupCount,
+      icon: UserPlus, // Maybe change icon
+      description: "Active channels"
+  }
+
 
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold text-white">Dashboard</h1>
-        <p className="text-gray-400 mt-1">Overview of your ChitShare server</p>
+        <h2 className="text-3xl font-bold tracking-tight">Dashboard</h2>
+        <p className="text-muted-foreground">
+          Overview of your ChitShare server activity.
+        </p>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
-          <div
-            key={stat.label}
-            className="bg-gray-900 rounded-xl p-6 border border-gray-800"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-gray-400 text-sm">{stat.label}</p>
-                <p className="text-3xl font-bold text-white mt-2">
-                  {stat.value}
-                </p>
-              </div>
-              <span className="text-4xl">{stat.icon}</span>
-            </div>
-          </div>
+          <Card key={stat.title}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">
+                {stat.title}
+              </CardTitle>
+              <stat.icon className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{stat.value}</div>
+              <p className="text-xs text-muted-foreground">
+                {stat.description}
+              </p>
+            </CardContent>
+          </Card>
         ))}
       </div>
 
-      {/* Recent Users */}
-      <div className="bg-gray-900 rounded-xl border border-gray-800">
-        <div className="p-6 border-b border-gray-800">
-          <h2 className="text-xl font-semibold text-white">Recent Users</h2>
-        </div>
-        <div className="divide-y divide-gray-800">
-          {recentUsers.map(
-            (user: {
-              id: string;
-              username: string;
-              email: string;
-              createdAt: Date;
-              isOnline: boolean;
-            }) => (
-              <div
-                key={user.id}
-                className="p-4 flex items-center justify-between"
-              >
-                <div className="flex items-center gap-4">
-                  <div className="relative">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-medium">
-                      {user.username[0].toUpperCase()}
-                    </div>
-                    {user.isOnline && (
-                      <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-gray-900" />
-                    )}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
+        <Card className="col-span-4">
+          <CardHeader>
+            <CardTitle>Recent Users</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-8">
+              {recentUsers.map((user) => (
+                <div key={user.id} className="flex items-center">
+                  <Avatar className="h-9 w-9">
+                    <AvatarImage src={user.avatarUrl || ""} alt={user.username} />
+                    <AvatarFallback>
+                      {user.username.slice(0, 2).toUpperCase()}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="ml-4 space-y-1">
+                    <p className="text-sm font-medium leading-none">
+                      {user.username}
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      {user.email}
+                    </p>
                   </div>
-                  <div>
-                    <p className="text-white font-medium">{user.username}</p>
-                    <p className="text-gray-400 text-sm">{user.email}</p>
+                  <div className="ml-auto font-medium text-xs text-muted-foreground">
+                    {new Date(user.createdAt).toLocaleDateString()}
                   </div>
                 </div>
-                <p className="text-gray-500 text-sm">
-                  {new Date(user.createdAt).toLocaleDateString()}
-                </p>
-              </div>
-            ),
-          )}
-        </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+        {/* Placeholder for optional chart or other stats */}
       </div>
     </div>
   );

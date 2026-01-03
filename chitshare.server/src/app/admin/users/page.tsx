@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
-import UserManagement from "./user-management";
+import { UsersTable } from "./users-table";
+import { CreateUserDialog } from "./create-user-dialog";
 
 export default async function UsersPage() {
   const users = await prisma.user.findMany({
@@ -12,6 +13,7 @@ export default async function UsersPage() {
       isOnline: true,
       createdAt: true,
       lastSeen: true,
+      avatarUrl: true,
     },
   });
 
@@ -19,12 +21,15 @@ export default async function UsersPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white">Users</h1>
-          <p className="text-gray-400 mt-1">Manage all registered users</p>
+          <h1 className="text-3xl font-bold tracking-tight">Users</h1>
+          <p className="text-muted-foreground">
+            Manage all registered users
+          </p>
         </div>
+        <CreateUserDialog />
       </div>
 
-      <UserManagement initialUsers={users} />
+      <UsersTable users={users} />
     </div>
   );
 }
