@@ -3,6 +3,11 @@
   "displayName": "Chitshare",
   "description": "Chat with your team directly from VS Code",
   "version": "0.0.1",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/thorved/chitshare",
+    "directory": "chitshare.extension"
+  },
   "publisher": "chitshare",
   "engines": {
     "vscode": "^1.104.0"
