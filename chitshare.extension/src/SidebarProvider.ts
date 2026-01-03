@@ -200,6 +200,10 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     message.filename as string
                 );
                 break;
+
+            case 'deleteConversation':
+                await this._deleteConversation(message.userId as string);
+                break;
         }
     }
 
@@ -591,6 +595,28 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             }
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Failed to download file';
+            vscode.window.showErrorMessage(errorMessage);
+        }
+    }
+
+    private async _deleteConversation(userId: string) {
+        const selection = await vscode.window.showWarningMessage(
+            "Are you sure you want to delete this conversation? This will delete all messages permanently.",
+            { modal: true },
+            "Delete"
+        );
+
+        if (selection !== 'Delete') {
+            return;
+        }
+
+        try {
+            await this.chatManager.deleteConversation(userId);
+            // Refresh conversations list
+            await this._loadConversations();
+            vscode.window.showInformationMessage('Conversation deleted');
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Failed to delete conversation';
             vscode.window.showErrorMessage(errorMessage);
         }
     }

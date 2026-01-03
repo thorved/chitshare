@@ -85,6 +85,11 @@ export function ChatListComponent(currentUser, conversations, groups) {
                         <div class="conversation-time">${formatTime(conv.lastMessage.createdAt)}</div>
                         ${conv.unreadCount > 0 ? `<div class="unread-badge">${conv.unreadCount}</div>` : ''}
                     </div>
+                    <div class="conversation-actions">
+                        <button class="delete-conversation-btn" data-id="${conv.user.id}" title="Delete conversation">
+                            🗑️
+                        </button>
+                    </div>
                 </div>
             `).join('')}
         </div>

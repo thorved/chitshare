@@ -167,6 +167,24 @@ export class ChatManager {
     }
 
     /**
+     * Delete a conversation
+     */
+    async deleteConversation(userId: string): Promise<void> {
+        await this.apiClient.request(
+            `/api/messages/conversations?targetUserId=${userId}`,
+            {
+                method: 'DELETE',
+            }
+        );
+        
+        // Clear local state if necessary, but polling will likely handle it.
+        // However, if we are currently in that chat, we should probably clear it.
+        if (this.currentChat && this.currentChat.type === 'dm' && this.currentChat.id === userId) {
+            this.setCurrentChat(null);
+        }
+    }
+
+    /**
      * Set current chat and start polling
      */
     setCurrentChat(chat: ChatTarget | null): void {

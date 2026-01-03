@@ -9,12 +9,23 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   MessageSquare,
   Users,
   Plus,
   LogOut,
   Settings,
   Search,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -55,6 +66,7 @@ export default function ChatSidebar({ user, className }: { user: User; className
   const [groups, setGroups] = useState<Group[]>([]);
   const [activeTab, setActiveTab] = useState<"dms" | "groups">("dms");
   const [search, setSearch] = useState("");
+  const [conversationToDelete, setConversationToDelete] = useState<string | null>(null);
   
   // Track previous conversations to detect new messages
   const prevConversationsRef = useRef<Map<string, string>>(new Map());
@@ -148,6 +160,33 @@ export default function ChatSidebar({ user, className }: { user: User; className
       }
     } catch (error) {
       console.error("Failed to fetch groups:", error);
+    }
+  }
+
+  async function deleteConversation(targetUserId: string) {
+    try {
+      const token = getToken();
+      const res = await fetch(`/api/messages/conversations?targetUserId=${targetUserId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (res.ok) {
+        setConversations(prev => prev.filter(c => c.user.id !== targetUserId));
+        toast.success("Conversation deleted");
+        
+        // If we are currently in this conversation, redirect to new chat
+        if (pathname === `/chat/dm/${targetUserId}`) {
+          router.push("/chat/new");
+        }
+      } else {
+        toast.error("Failed to delete conversation");
+      }
+    } catch (error) {
+      console.error("Failed to delete conversation:", error);
+      toast.error("Error deleting conversation");
+    } finally {
+      setConversationToDelete(null);
     }
   }
 
@@ -265,7 +304,7 @@ export default function ChatSidebar({ user, className }: { user: User; className
                 <Link
                   key={conv.user.id}
                   href={`/chat/dm/${conv.user.id}`}
-                  className={`flex items-center gap-2.5 p-2.5 rounded-lg transition-colors mb-1 ${
+                  className={`group flex items-center gap-2.5 p-2.5 rounded-lg transition-colors mb-1 ${
                     pathname === `/chat/dm/${conv.user.id}`
                       ? "bg-accent"
                       : "hover:bg-accent/50"
@@ -300,6 +339,19 @@ export default function ChatSidebar({ user, className }: { user: User; className
                       {conv.lastMessage.content}
                     </p>
                   </div>
+                  
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setConversationToDelete(conv.user.id);
+                    }}
+                  >
+                    <Trash2 className="w-4 h-4 text-muted-foreground hover:text-destructive transition-colors" />
+                  </Button>
                 </Link>
               ))
             )}
@@ -351,6 +403,26 @@ export default function ChatSidebar({ user, className }: { user: User; className
           </div>
         )}
       </ScrollArea>
+
+      <AlertDialog open={!!conversationToDelete} onOpenChange={(open) => !open && setConversationToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Conversation</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this conversation? This action cannot be undone and will permanently delete all messages with this user.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => conversationToDelete && deleteConversation(conversationToDelete)}
+              className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </aside>
   );
 }

@@ -73,3 +73,38 @@ export async function GET(request: Request) {
     );
   }
 }
+
+// DELETE /api/messages/conversations?targetUserId=... - Delete a conversation
+export async function DELETE(request: Request) {
+  try {
+    const user = await requireAuth(request);
+    const { searchParams } = new URL(request.url);
+    const targetUserId = searchParams.get("targetUserId");
+
+    if (!targetUserId) {
+      return NextResponse.json(
+        { error: "Target user ID is required" },
+        { status: 400 },
+      );
+    }
+
+    // Delete all messages between the two users
+    await prisma.message.deleteMany({
+      where: {
+        OR: [
+          { senderId: user.id, receiverId: targetUserId },
+          { senderId: targetUserId, receiverId: user.id },
+        ],
+      },
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    if (error instanceof Response) return error;
+    console.error("Delete conversation error:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 },
+    );
+  }
+}

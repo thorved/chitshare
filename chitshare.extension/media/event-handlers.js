@@ -260,6 +260,17 @@ export function attachChatListListeners() {
             openChat(type, id);
         });
     });
+
+    document.querySelectorAll('.delete-conversation-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const userId = btn.getAttribute('data-id');
+            vscode.postMessage({
+                type: 'deleteConversation',
+                userId: userId
+            });
+        });
+    });
 }
 
 function openChat(type, id) {

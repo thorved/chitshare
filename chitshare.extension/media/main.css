@@ -329,6 +329,37 @@ body {
     border-radius: 9px;
 }
 
+.conversation-actions {
+    display: flex;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.conversation-item:hover .conversation-actions {
+    opacity: 1;
+}
+
+.delete-conversation-btn {
+    padding: 4px;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    opacity: 0.6;
+    border-radius: 4px;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--vscode-descriptionForeground);
+}
+
+.delete-conversation-btn:hover {
+    opacity: 1;
+    color: var(--vscode-errorForeground);
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
 /* Chat view */
 .chat-view {
     flex: 1;
