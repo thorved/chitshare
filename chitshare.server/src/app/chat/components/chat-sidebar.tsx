@@ -165,7 +165,7 @@ export default function ChatSidebar({ user }: { user: User }) {
   );
 
   return (
-    <aside className="w-80 border-r border-border flex flex-col bg-card h-full">
+    <aside className="w-80 border-r border-border flex flex-col bg-card h-full" suppressHydrationWarning>
       {/* Header with user info and actions */}
       <div className="p-3 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">
