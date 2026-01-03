@@ -122,6 +122,8 @@ export function ChatListComponent(currentUser, conversations, groups) {
 
     return `
         <div class="app-container">
+        <div class="app-container">
+            ${userHtml}
             <div class="header">
                 <div class="header-title">
                     💬 Chats
@@ -135,12 +137,12 @@ export function ChatListComponent(currentUser, conversations, groups) {
                     </button>
                 </div>
             </div>
-            ${userHtml}
             <div class="chat-list-view">
                 ${conversationsHtml}
                 ${groupsHtml}
                 ${emptyHtml}
             </div>
+        </div>
         </div>
     `;
 }
