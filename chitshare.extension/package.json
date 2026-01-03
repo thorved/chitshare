@@ -8,7 +8,7 @@
     "url": "https://github.com/thorved/chitshare",
     "directory": "chitshare.extension"
   },
-  "publisher": "chitshare",
+  "publisher": "thorved",
   "engines": {
     "vscode": "^1.104.0"
   },
