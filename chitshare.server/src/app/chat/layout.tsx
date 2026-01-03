@@ -2,8 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { verifyToken } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import ChatSidebar from "./components/chat-sidebar";
-import MobileNav from "./components/mobile-nav";
+import ChatLayoutClient from "./components/chat-layout-client";
 
 export default async function ChatLayout({
   children,
@@ -45,16 +44,8 @@ export default async function ChatLayout({
   });
 
   return (
-    <div className="h-screen flex overflow-hidden">
-      {/* Sidebar - hidden on mobile, shown on md+ */}
-      <div className="hidden md:block">
-        <ChatSidebar user={user} />
-      </div>
-      <main className="flex-1 min-h-0 flex flex-col overflow-hidden pb-14 md:pb-0">
-        {children}
-      </main>
-      {/* Mobile bottom nav */}
-      <MobileNav />
-    </div>
+    <ChatLayoutClient user={user}>
+      {children}
+    </ChatLayoutClient>
   );
 }
