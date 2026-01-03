@@ -25,9 +25,15 @@ ENV NODE_ENV=production
 ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
+# Copy public directory
 COPY --from=builder /app/public ./public
+
+# Copy built standalone application
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
+
+# Copy Prisma schema specifically for migrations if needed
+COPY --from=builder /app/prisma ./prisma
 
 EXPOSE 3000
 ENTRYPOINT ["bun", "--bun", "run", "server.js"]
