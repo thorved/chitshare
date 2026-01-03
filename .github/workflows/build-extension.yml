@@ -1,0 +1,46 @@
+name: Build Extension
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release Version (e.g. v1.0.0)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-extension:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Extension Dependencies
+        working-directory: ./chitshare.extension
+        run: npm ci
+
+      - name: Create VSIX Package
+        working-directory: ./chitshare.extension
+        run: npx @vscode/vsce package -o chitshare.vsix
+
+      - name: Upload Extension Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chitshare-extension
+          path: ./chitshare.extension/chitshare.vsix
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ inputs.version }}
+          files: ./chitshare.extension/chitshare.vsix
+          draft: true
+          generate_release_notes: true
