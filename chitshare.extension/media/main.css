@@ -412,16 +412,19 @@ body {
 .messages-container {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
     padding: var(--spacing-md);
     display: flex;
     flex-direction: column;
     gap: var(--spacing-sm);
+    width: 100%;
 }
 
 .message {
     display: flex;
     gap: var(--spacing-sm);
     max-width: 85%;
+    min-width: 0;
 }
 
 .message.own {
@@ -447,6 +450,9 @@ body {
     display: flex;
     flex-direction: column;
     gap: 2px;
+    min-width: 0;
+    overflow: hidden;
+    max-width: 100%;
 }
 
 .message-sender {
@@ -467,6 +473,8 @@ body {
     font-size: 13px;
     line-height: 1.5;
     word-wrap: break-word;
+    overflow: hidden;
+    max-width: 100%;
 }
 
 .message.own .message-bubble {
@@ -815,24 +823,17 @@ body {
 
 /* Message bubble adjustments for code */
 .message-bubble .code-block {
-    margin: var(--spacing-sm) calc(-1 * var(--spacing-md));
-    border-radius: 0;
-    border-left: none;
-    border-right: none;
+    margin: var(--spacing-sm) 0;
+    border-radius: var(--radius-sm);
+    max-width: 100%;
 }
 
 .message-bubble .code-block:first-child {
-    margin-top: calc(-1 * var(--spacing-sm));
-    border-top: none;
-    border-top-left-radius: var(--radius-md);
-    border-top-right-radius: var(--radius-md);
+    margin-top: 0;
 }
 
 .message-bubble .code-block:last-child {
-    margin-bottom: calc(-1 * var(--spacing-sm));
-    border-bottom: none;
-    border-bottom-left-radius: var(--radius-md);
-    border-bottom-right-radius: var(--radius-md);
+    margin-bottom: 0;
 }
 
 /* Own message code block styling */
@@ -846,14 +847,12 @@ body {
 
 /* Message bubble with only code */
 .message-bubble > .code-block:only-child {
-    margin: calc(-1 * var(--spacing-sm)) calc(-1 * var(--spacing-md));
-    border: none;
-    border-radius: var(--radius-md);
+    margin: 0;
 }
 
 .message.own .message-bubble:has(> .code-block:only-child) {
     background: transparent;
-    padding: 0;
+    padding: var(--spacing-xs);
     border: none;
 }
 
