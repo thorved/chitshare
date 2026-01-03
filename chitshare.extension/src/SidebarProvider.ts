@@ -122,6 +122,14 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 );
                 break;
 
+            case 'loadMoreMessages':
+                await this._loadMoreMessages(
+                    message.chatType as 'dm' | 'group',
+                    message.chatId as string,
+                    message.cursor as string
+                );
+                break;
+
             case 'sendMessage':
                 await this._sendMessage(
                     message.content as string,
@@ -220,10 +228,12 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         try {
             let messages: Message[];
             let chat: ChatTarget;
+            let hasMore = false;
 
             if (chatType === 'dm') {
                 const result = await this.chatManager.getDMMessages(chatId);
                 messages = result.messages;
+                hasMore = result.hasMore;
                 chat = {
                     type: 'dm',
                     id: chatId,
@@ -231,7 +241,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     avatarUrl: result.user.avatarUrl,
                 };
             } else {
-                messages = await this.chatManager.getGroupMessages(chatId);
+                const result = await this.chatManager.getGroupMessages(chatId);
+                messages = result.messages;
+                hasMore = result.hasMore;
                 chat = {
                     type: 'group',
                     id: chatId,
@@ -242,9 +254,36 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             // Initialize known messages for incremental updates
             this.chatManager.initializeKnownMessages(messages);
             this.chatManager.setCurrentChat(chat);
-            this.postMessage({ type: 'messages', messages, chat });
+            this.postMessage({ type: 'messages', messages, chat, hasMore });
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Failed to load messages';
+            this.postMessage({ type: 'error', error: errorMessage });
+        }
+    }
+
+    private async _loadMoreMessages(chatType: 'dm' | 'group', chatId: string, cursor: string) {
+        try {
+            let messages: Message[];
+            let hasMore = false;
+
+            if (chatType === 'dm') {
+                const result = await this.chatManager.getDMMessages(chatId, cursor);
+                messages = result.messages;
+                hasMore = result.hasMore;
+            } else {
+                const result = await this.chatManager.getGroupMessages(chatId, cursor);
+                messages = result.messages;
+                hasMore = result.hasMore;
+            }
+
+            // Track these older messages
+            for (const msg of messages) {
+                this.chatManager.addKnownMessage(msg.id);
+            }
+
+            this.postMessage({ type: 'olderMessages', messages, hasMore });
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Failed to load more messages';
             this.postMessage({ type: 'error', error: errorMessage });
         }
     }

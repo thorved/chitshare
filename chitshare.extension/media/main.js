@@ -12,6 +12,8 @@
     let currentChat = null;
     let messages = [];
     let codeBlockCounter = 0;
+    let hasMore = false;
+    let loadingMore = false;
 
     // DOM elements
     const app = document.getElementById('app');
@@ -436,6 +438,7 @@
                 if (message.chat) {
                     currentChat = message.chat;
                 }
+                hasMore = message.hasMore || false;
                 render();
                 scrollToBottom();
                 break;
@@ -450,6 +453,20 @@
                         scrollToBottom();
                     }
                 }
+                break;
+            case 'olderMessages':
+                // Prepend older messages (scroll up pagination)
+                loadingMore = false;
+                if (message.messages && message.messages.length > 0) {
+                    const existingIds = new Set(messages.map(m => m.id));
+                    const olderMsgs = message.messages.filter(m => !existingIds.has(m.id));
+                    if (olderMsgs.length > 0) {
+                        messages.unshift(...olderMsgs);
+                        prependMessages(olderMsgs);
+                    }
+                }
+                hasMore = message.hasMore || false;
+                hideLoadingIndicator();
                 break;
             case 'messageSent':
                 // Check if message already exists (avoid duplicates)
@@ -849,7 +866,69 @@
         // Request syntax highlighting for code blocks
         requestCodeHighlighting();
 
+        // Set up scroll listener for loading older messages
+        const messagesContainer = document.getElementById('messagesContainer');
+        if (messagesContainer) {
+            messagesContainer.addEventListener('scroll', handleScroll);
+        }
+
         scrollToBottom();
+    }
+
+    function handleScroll() {
+        const container = document.getElementById('messagesContainer');
+        if (!container || loadingMore || !hasMore) {
+            return;
+        }
+
+        // Load more when scrolled near the top (within 50px)
+        if (container.scrollTop < 50) {
+            loadMoreMessages();
+        }
+    }
+
+    function loadMoreMessages() {
+        if (loadingMore || !hasMore || !currentChat || messages.length === 0) {
+            return;
+        }
+
+        loadingMore = true;
+        
+        // Get the oldest message's timestamp as cursor
+        const oldestMessage = messages[0];
+        const cursor = oldestMessage.createdAt;
+
+        showLoadingIndicator();
+
+        vscode.postMessage({
+            type: 'loadMoreMessages',
+            chatType: currentChat.type,
+            chatId: currentChat.id,
+            cursor: cursor,
+        });
+    }
+
+    function showLoadingIndicator() {
+        const container = document.getElementById('messagesContainer');
+        if (!container) {
+            return;
+        }
+
+        // Add loading indicator at the top
+        const existingLoader = container.querySelector('.loading-more');
+        if (!existingLoader) {
+            const loader = document.createElement('div');
+            loader.className = 'loading-more';
+            loader.innerHTML = '<div class="spinner"></div>';
+            container.insertBefore(loader, container.firstChild);
+        }
+    }
+
+    function hideLoadingIndicator() {
+        const loader = document.querySelector('.loading-more');
+        if (loader) {
+            loader.remove();
+        }
     }
 
     function setupCodeBlockListeners() {
@@ -1008,6 +1087,89 @@
                 });
             });
         }
+    }
+
+    // Prepend older messages at the top (for scroll-up pagination)
+    function prependMessages(olderMsgs) {
+        const container = document.getElementById('messagesContainer');
+        if (!container) {
+            return;
+        }
+
+        // Save current scroll height to maintain position
+        const previousScrollHeight = container.scrollHeight;
+
+        // Create a fragment to hold all new messages
+        const fragment = document.createDocumentFragment();
+
+        // Create message elements in reverse order (oldest first)
+        for (const msg of olderMsgs) {
+            const isOwn = currentUser && msg.sender.id === currentUser.id;
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${isOwn ? 'own' : ''}`;
+            msgDiv.innerHTML = `
+                <div class="message-avatar">
+                    ${msg.sender.avatarUrl 
+                        ? `<img src="${msg.sender.avatarUrl}" alt="">` 
+                        : getInitials(msg.sender.username)}
+                </div>
+                <div class="message-content">
+                    ${!isOwn ? `<div class="message-sender">${escapeHtml(msg.sender.username)}</div>` : ''}
+                    <div class="message-bubble">${formatMessageContent(msg.content)}</div>
+                    <div class="message-time">${formatTime(msg.createdAt)}</div>
+                </div>
+            `;
+            fragment.appendChild(msgDiv);
+
+            // Set up code block listeners for this message
+            msgDiv.querySelectorAll('.code-copy-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const codeBlock = btn.closest('.code-block');
+                    const encodedCode = codeBlock.getAttribute('data-code');
+                    const code = decodeCode(encodedCode);
+                    copyToClipboard(code, btn);
+                });
+            });
+
+            msgDiv.querySelectorAll('.code-open-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    const codeBlock = btn.closest('.code-block');
+                    const encodedCode = codeBlock.getAttribute('data-code');
+                    const code = decodeCode(encodedCode);
+                    const lang = codeBlock.getAttribute('data-lang') || 'text';
+                    vscode.postMessage({
+                        type: 'openInEditor',
+                        code: code,
+                        language: lang,
+                    });
+                });
+            });
+
+            // Request syntax highlighting for code blocks in this message
+            msgDiv.querySelectorAll('.code-block').forEach(block => {
+                const id = block.getAttribute('data-id');
+                const encodedCode = block.getAttribute('data-code');
+                const code = decodeCode(encodedCode);
+                const lang = block.getAttribute('data-lang') || 'text';
+                
+                vscode.postMessage({
+                    type: 'highlightCode',
+                    id: id,
+                    code: code,
+                    language: lang,
+                });
+            });
+        }
+
+        // Insert at the beginning of the container
+        const firstChild = container.firstChild;
+        container.insertBefore(fragment, firstChild);
+
+        // Restore scroll position so user doesn't jump
+        const newScrollHeight = container.scrollHeight;
+        container.scrollTop = newScrollHeight - previousScrollHeight;
     }
 
     function scrollToBottom() {

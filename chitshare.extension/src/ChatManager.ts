@@ -90,24 +90,26 @@ export class ChatManager {
     /**
      * Get messages for a DM conversation
      */
-    async getDMMessages(userId: string): Promise<{ user: User; messages: Message[] }> {
+    async getDMMessages(userId: string, cursor?: string): Promise<{ user: User; messages: Message[]; hasMore: boolean }> {
+        const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
         const response = await this.apiClient.request<{
             user: User;
             messages: Message[];
             hasMore: boolean;
-        }>(`/api/messages/dm/${userId}`);
+        }>(`/api/messages/dm/${userId}${query}`);
         return response;
     }
 
     /**
      * Get messages for a group
      */
-    async getGroupMessages(groupId: string): Promise<Message[]> {
+    async getGroupMessages(groupId: string, cursor?: string): Promise<{ messages: Message[]; hasMore: boolean }> {
+        const query = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
         const response = await this.apiClient.request<{
             messages: Message[];
             hasMore: boolean;
-        }>(`/api/groups/${groupId}/messages`);
-        return response.messages;
+        }>(`/api/groups/${groupId}/messages${query}`);
+        return response;
     }
 
     /**
@@ -209,6 +211,13 @@ export class ChatManager {
     }
 
     /**
+     * Add a single message to known messages
+     */
+    addKnownMessage(messageId: string): void {
+        this.knownMessageIds.add(messageId);
+    }
+
+    /**
      * Start polling for new messages
      */
     private startPolling(): void {
@@ -223,7 +232,8 @@ export class ChatManager {
                         const result = await this.getDMMessages(this.currentChat.id);
                         messages = result.messages;
                     } else {
-                        messages = await this.getGroupMessages(this.currentChat.id);
+                        const result = await this.getGroupMessages(this.currentChat.id);
+                        messages = result.messages;
                     }
 
                     // Find new messages
