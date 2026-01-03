@@ -310,7 +310,7 @@ type ContentPart = TextPart | CodePart;
 function parseMessage(content: string): ContentPart[] {
   const parts: ContentPart[] = [];
   
-  const regex = /```(\w*)\n?([\s\S]*?)```/g;
+const regex = /(?:^|\n)```(\w*)\n?([\s\S]*?)```/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
   let hasExplicitBlocks = false;
