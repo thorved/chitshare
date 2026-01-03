@@ -27,6 +27,7 @@ interface Message {
     avatarUrl: string | null;
   };
   createdAt: string;
+  status?: "sending" | "sent" | "error";
 }
 
 interface GroupInfo {
@@ -230,9 +231,30 @@ export default function GroupChatPage() {
 
   async function sendMessage(e: React.FormEvent) {
     e.preventDefault();
-    if (!newMessage.trim() || sending) return;
+    if (!newMessage.trim()) return;
 
-    setSending(true);
+    const tempId = Date.now().toString();
+    const messageContent = newMessage;
+
+    // Create optimistic message
+    const optimisticMessage: Message = {
+      id: tempId,
+      content: messageContent,
+      type: "text",
+      senderId: currentUserId!,
+      sender: {
+        id: currentUserId!,
+        username: "", // Placeholder
+        avatarUrl: null
+      },
+      createdAt: new Date().toISOString(),
+      status: "sending"
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+    setNewMessage("");
+    setTimeout(scrollToBottom, 50);
+
     try {
       const res = await fetch(`/api/groups/${groupId}/messages`, {
         method: "POST",
@@ -240,21 +262,29 @@ export default function GroupChatPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${getToken()}`,
         },
-        body: JSON.stringify({ content: newMessage }),
+        body: JSON.stringify({ content: messageContent }),
       });
 
       if (res.ok) {
         const data = await res.json();
-        setMessages((prev) => [...prev, data.message]);
+        // Replace optimistic message
+        setMessages((prev) => 
+          prev.map((msg) => msg.id === tempId ? { ...data.message, status: 'sent' } : msg)
+        );
         prevMessageCount.current += 1;
-        setNewMessage("");
-        setTimeout(scrollToBottom, 50);
+      } else {
+         // Mark as error
+        setMessages((prev) => 
+          prev.map((msg) => msg.id === tempId ? { ...msg, status: 'error' } : msg)
+        );
       }
     } catch (error) {
       console.error("Failed to send message:", error);
-    } finally {
-      setSending(false);
-    }
+      // Mark as error
+      setMessages((prev) => 
+        prev.map((msg) => msg.id === tempId ? { ...msg, status: 'error' } : msg)
+      );
+    } 
   }
 
   function formatTime(dateStr: string) {
@@ -360,17 +390,17 @@ export default function GroupChatPage() {
                         </AvatarFallback>
                       </Avatar>
                     )}
-                    <div
-                      className={`max-w-[85%] md:max-w-[80%] ${
-                        isCode
-                          ? ""
-                          : `rounded-2xl px-3 py-2 md:px-4 md:py-2 ${
-                              isOwn
-                                ? "bg-primary text-primary-foreground rounded-br-md"
-                                : "bg-muted rounded-bl-md"
-                            }`
-                      }`}
-                    >
+                      <div
+                        className={`max-w-[85%] md:max-w-[80%] ${
+                          isCode
+                            ? ""
+                            : `rounded-2xl px-3 py-2 md:px-4 md:py-2 ${
+                                isOwn
+                                  ? "bg-primary text-primary-foreground rounded-br-md"
+                                  : "bg-muted rounded-bl-md"
+                              }`
+                        } ${msg.status === "sending" ? "opacity-70" : ""} ${msg.status === "error" ? "border border-destructive bg-destructive/10 text-destructive" : ""}`}
+                      >
                       {!isOwn && !isCode && (
                         <p className="text-xs font-medium text-primary mb-1">
                           {msg.sender?.username}
