@@ -2,8 +2,7 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { prisma } from "./db";
 
-const JWT_SECRET =
-  process.env.JWT_SECRET || "chitshare-secret-change-in-production";
+import { JWT_SECRET } from "@/lib/session";
 const TOKEN_EXPIRY = "7d";
 
 export interface TokenPayload {

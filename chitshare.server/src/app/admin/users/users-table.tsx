@@ -1,5 +1,9 @@
 "use client";
 
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import { useState, useEffect } from "react";
+
 import {
   Table,
   TableBody,
@@ -20,6 +24,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 interface User {
   id: string;
@@ -37,6 +51,44 @@ interface UsersTableProps {
 }
 
 export function UsersTable({ users }: UsersTableProps) {
+  const router = useRouter();
+  const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  async function handleDeleteConfirm() {
+    if (!userToDelete) return;
+
+    try {
+      const token = document.cookie
+        .split("; ")
+        .find((row) => row.startsWith("auth_token="))
+        ?.split("=")[1];
+
+      const res = await fetch(`/api/users/${userToDelete.id}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to delete user");
+      }
+
+      toast.success("User deleted successfully");
+      router.refresh();
+    } catch (error) {
+      console.error("Delete user error:", error);
+      toast.error("Failed to delete user");
+    } finally {
+      setUserToDelete(null);
+    }
+  }
+
+  if (!isMounted) return null;
+
   return (
     <div className="rounded-md border">
       <Table>
@@ -79,7 +131,7 @@ export function UsersTable({ users }: UsersTableProps) {
                 </Badge>
               </TableCell>
               <TableCell className="hidden md:table-cell">
-                {new Date(user.createdAt).toLocaleDateString()}
+                {new Date(user.createdAt).toLocaleDateString("en-US")}
               </TableCell>
               <TableCell className="text-right">
                 <DropdownMenu>
@@ -98,7 +150,10 @@ export function UsersTable({ users }: UsersTableProps) {
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem>View Details</DropdownMenuItem>
-                    <DropdownMenuItem className="text-destructive">
+                    <DropdownMenuItem 
+                      className="text-destructive focus:text-destructive"
+                      onClick={() => setUserToDelete(user)}
+                    >
                       Delete User
                     </DropdownMenuItem>
                   </DropdownMenuContent>
@@ -108,6 +163,28 @@ export function UsersTable({ users }: UsersTableProps) {
           ))}
         </TableBody>
       </Table>
+
+      <AlertDialog open={!!userToDelete} onOpenChange={(open: boolean) => !open && setUserToDelete(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the user
+              <span className="font-semibold text-foreground"> {userToDelete?.username} </span>
+              and remove their data from our servers.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={handleDeleteConfirm}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
