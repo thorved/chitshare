@@ -610,6 +610,29 @@ body {
     cursor: not-allowed;
 }
 
+/* Attach button */
+.attach-btn {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--vscode-foreground);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background var(--transition-fast);
+    opacity: 0.7;
+    font-size: 16px;
+}
+
+.attach-btn:hover {
+    opacity: 1;
+    background: var(--vscode-toolbar-hoverBackground);
+}
+
 /* Empty states */
 .empty-state {
     flex: 1;

@@ -389,6 +389,24 @@ export function attachChatListeners() {
 
     sendBtn.addEventListener('click', sendMessage);
 
+    // File upload button
+    const attachBtn = document.getElementById('attachBtn');
+    const fileInput = document.getElementById('fileInput');
+    
+    if (attachBtn && fileInput) {
+        attachBtn.addEventListener('click', () => {
+            fileInput.click();
+        });
+        
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                uploadFile(file);
+                fileInput.value = ''; // Reset for next upload
+            }
+        });
+    }
+
     setupCodeBlockListeners();
     setupDragDropListeners();
     setupFileActionListeners();

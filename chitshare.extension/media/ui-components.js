@@ -320,7 +320,11 @@ export function ChatComponent(currentChat, messages, currentUser) {
                 `}
             </div>
             <div class="message-input-container">
+                <input type="file" id="fileInput" style="display: none;">
                 <div class="message-input-wrapper">
+                    <button class="attach-btn" id="attachBtn" title="Attach file">
+                        📎
+                    </button>
                     <textarea 
                         class="message-input" 
                         id="messageInput" 
