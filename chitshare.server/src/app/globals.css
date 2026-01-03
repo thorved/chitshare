@@ -173,3 +173,23 @@
 .scrollbar-auto-hide:hover::-webkit-scrollbar {
   display: block;
 }
+
+/* Shiki Code Block Styles */
+.shiki-code-block pre {
+  padding: 0.75rem 1rem;
+  overflow-x: auto;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  margin: 0;
+  border-radius: 0;
+}
+
+.shiki-code-block pre code {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.shiki-code-block code .line {
+  display: block;
+}
+
+

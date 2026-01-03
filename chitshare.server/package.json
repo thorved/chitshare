@@ -28,6 +28,7 @@
     "prisma": "7",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "shiki": "^3.20.0",
     "sonner": "^2.0.7",
     "tailwind-merge": "^3.4.0"
   },
