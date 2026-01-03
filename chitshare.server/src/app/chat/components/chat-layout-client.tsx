@@ -24,7 +24,7 @@ export default function ChatLayoutClient({ children, user }: ChatLayoutClientPro
 
   return (
     <UserProvider user={user}>
-      <div className="h-screen flex overflow-hidden">
+      <div className="h-[100dvh] flex overflow-hidden">
         {/* Sidebar - hidden on mobile, shown on md+ */}
         <div className="hidden md:block">
           <ChatSidebar user={user} className="w-80" />
