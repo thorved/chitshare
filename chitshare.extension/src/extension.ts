@@ -1,26 +1,74 @@
-// The module 'vscode' contains the VS Code extensibility API
-// Import the module and reference it with the alias vscode in your code below
 import * as vscode from 'vscode';
+import { SidebarProvider } from './SidebarProvider';
 
-// This method is called when your extension is activated
-// Your extension is activated the very first time the command is executed
+let sidebarProvider: SidebarProvider;
+
 export function activate(context: vscode.ExtensionContext) {
+    console.log('Chitshare extension is now active!');
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "chitshare" is now active!');
+    // Create sidebar provider
+    sidebarProvider = new SidebarProvider(context.extensionUri, context);
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('chitshare.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from chitshare!');
-	});
+    // Register sidebar webview provider (Activity Bar)
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(
+            SidebarProvider.viewType,
+            sidebarProvider,
+            {
+                webviewOptions: {
+                    retainContextWhenHidden: true,
+                },
+            }
+        )
+    );
 
-	context.subscriptions.push(disposable);
+    // Register Explorer chat view (same provider, different location)
+    context.subscriptions.push(
+        vscode.window.registerWebviewViewProvider(
+            SidebarProvider.explorerViewType,
+            sidebarProvider,
+            {
+                webviewOptions: {
+                    retainContextWhenHidden: true,
+                },
+            }
+        )
+    );
+
+    // Register login command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('chitshare.login', () => {
+            sidebarProvider.login();
+        })
+    );
+
+    // Register logout command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('chitshare.logout', () => {
+            sidebarProvider.logout();
+        })
+    );
+
+    // Register refresh command
+    context.subscriptions.push(
+        vscode.commands.registerCommand('chitshare.refresh', () => {
+            sidebarProvider.refresh();
+        })
+    );
+
+    // Listen for configuration changes
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((e) => {
+            if (e.affectsConfiguration('chitshare')) {
+                // Refresh when settings change
+                sidebarProvider.refresh();
+            }
+        })
+    );
 }
 
-// This method is called when your extension is deactivated
-export function deactivate() {}
+export function deactivate() {
+    if (sidebarProvider) {
+        sidebarProvider.dispose();
+    }
+}

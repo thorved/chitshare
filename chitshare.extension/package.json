@@ -1,8 +1,9 @@
 {
   "name": "chitshare",
-  "displayName": "chitshare",
-  "description": "",
+  "displayName": "Chitshare",
+  "description": "Chat with your team directly from VS Code",
   "version": "0.0.1",
+  "publisher": "chitshare",
   "engines": {
     "vscode": "^1.104.0"
   },
@@ -11,13 +12,68 @@
   ],
   "activationEvents": [],
   "main": "./dist/extension.js",
+  "icon": "media/icon.png",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "chitshare-sidebar",
+          "title": "Chitshare",
+          "icon": "media/chat-icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "chitshare-sidebar": [
+        {
+          "type": "webview",
+          "id": "chitshare.chatView",
+          "name": "Chat"
+        }
+      ],
+      "explorer": [
+        {
+          "type": "webview",
+          "id": "chitshare.explorerChatView",
+          "name": "Chitshare"
+        }
+      ]
+    },
     "commands": [
       {
-        "command": "chitshare.helloWorld",
-        "title": "Hello World"
+        "command": "chitshare.login",
+        "title": "Chitshare: Login"
+      },
+      {
+        "command": "chitshare.logout",
+        "title": "Chitshare: Logout"
+      },
+      {
+        "command": "chitshare.refresh",
+        "title": "Chitshare: Refresh Conversations"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Chitshare",
+      "properties": {
+        "chitshare.serverUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Base URL of the Chitshare server (e.g., http://localhost:3000)"
+        },
+        "chitshare.pollInterval": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 1000,
+          "description": "Interval in milliseconds for polling new messages"
+        },
+        "chitshare.autoReconnect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically reconnect when connection is lost"
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
@@ -44,5 +100,9 @@
     "typescript": "^5.9.3",
     "@vscode/test-cli": "^0.0.12",
     "@vscode/test-electron": "^2.5.2"
+  },
+  "dependencies": {
+    "marked": "^15.0.0",
+    "shiki": "^1.24.0"
   }
 }

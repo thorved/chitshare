@@ -1,0 +1,277 @@
+import * as vscode from 'vscode';
+import { ApiClient, User } from './ApiClient';
+
+export interface Conversation {
+    user: {
+        id: string;
+        username: string;
+        avatarUrl: string | null;
+        isOnline: boolean;
+    };
+    lastMessage: {
+        id: string;
+        content: string;
+        createdAt: string;
+        senderId: string;
+    };
+    unreadCount: number;
+}
+
+export interface Group {
+    id: string;
+    name: string;
+    description: string | null;
+    avatarUrl: string | null;
+    myRole: string;
+    memberCount: number;
+    updatedAt: string;
+}
+
+export interface Message {
+    id: string;
+    content: string;
+    type: string;
+    createdAt: string;
+    sender: {
+        id: string;
+        username: string;
+        avatarUrl: string | null;
+    };
+}
+
+export interface ChatTarget {
+    type: 'dm' | 'group';
+    id: string;
+    name: string;
+    avatarUrl?: string | null;
+    isOnline?: boolean;
+}
+
+export class ChatManager {
+    private apiClient: ApiClient;
+    private pollTimer: NodeJS.Timeout | null = null;
+    private currentChat: ChatTarget | null = null;
+    private knownMessageIds: Set<string> = new Set();
+    private onMessagesUpdateCallback: ((messages: Message[]) => void) | null = null;
+    private onNewMessagesCallback: ((messages: Message[]) => void) | null = null;
+    private onNotificationCallback: ((message: Message, chatName: string) => void) | null = null;
+
+    constructor(apiClient: ApiClient) {
+        this.apiClient = apiClient;
+    }
+
+    /**
+     * Get all DM conversations
+     */
+    async getConversations(): Promise<Conversation[]> {
+        const response = await this.apiClient.request<{ conversations: Conversation[] }>(
+            '/api/messages/conversations'
+        );
+        return response.conversations;
+    }
+
+    /**
+     * Get all groups the user is a member of
+     */
+    async getGroups(): Promise<Group[]> {
+        const response = await this.apiClient.request<{ groups: Group[] }>('/api/groups');
+        return response.groups;
+    }
+
+    /**
+     * Get users list for starting new conversations
+     */
+    async getUsers(search?: string): Promise<User[]> {
+        const query = search ? `?search=${encodeURIComponent(search)}` : '';
+        const response = await this.apiClient.request<{ users: User[] }>(`/api/users${query}`);
+        return response.users;
+    }
+
+    /**
+     * Get messages for a DM conversation
+     */
+    async getDMMessages(userId: string): Promise<{ user: User; messages: Message[] }> {
+        const response = await this.apiClient.request<{
+            user: User;
+            messages: Message[];
+            hasMore: boolean;
+        }>(`/api/messages/dm/${userId}`);
+        return response;
+    }
+
+    /**
+     * Get messages for a group
+     */
+    async getGroupMessages(groupId: string): Promise<Message[]> {
+        const response = await this.apiClient.request<{
+            messages: Message[];
+            hasMore: boolean;
+        }>(`/api/groups/${groupId}/messages`);
+        return response.messages;
+    }
+
+    /**
+     * Send a DM message
+     */
+    async sendDM(userId: string, content: string): Promise<Message> {
+        const response = await this.apiClient.request<{ message: Message }>(
+            `/api/messages/dm/${userId}`,
+            {
+                method: 'POST',
+                body: { content, type: 'text' },
+            }
+        );
+        // Track this message immediately to avoid duplicate
+        this.knownMessageIds.add(response.message.id);
+        return response.message;
+    }
+
+    /**
+     * Send a group message
+     */
+    async sendGroupMessage(groupId: string, content: string): Promise<Message> {
+        const response = await this.apiClient.request<{ message: Message }>(
+            `/api/groups/${groupId}/messages`,
+            {
+                method: 'POST',
+                body: { content, type: 'text' },
+            }
+        );
+        // Track this message immediately to avoid duplicate
+        this.knownMessageIds.add(response.message.id);
+        return response.message;
+    }
+
+    /**
+     * Send message to current chat
+     */
+    async sendMessage(content: string): Promise<Message | null> {
+        if (!this.currentChat) {
+            return null;
+        }
+
+        if (this.currentChat.type === 'dm') {
+            return this.sendDM(this.currentChat.id, content);
+        } else {
+            return this.sendGroupMessage(this.currentChat.id, content);
+        }
+    }
+
+    /**
+     * Set current chat and start polling
+     */
+    setCurrentChat(chat: ChatTarget | null): void {
+        this.currentChat = chat;
+        this.knownMessageIds.clear();
+        this.stopPolling();
+        
+        if (chat) {
+            this.startPolling();
+        }
+    }
+
+    /**
+     * Get current chat
+     */
+    getCurrentChat(): ChatTarget | null {
+        return this.currentChat;
+    }
+
+    /**
+     * Set callback for initial messages load (full render)
+     */
+    onMessagesUpdate(callback: (messages: Message[]) => void): void {
+        this.onMessagesUpdateCallback = callback;
+    }
+
+    /**
+     * Set callback for new messages (incremental update)
+     */
+    onNewMessages(callback: (messages: Message[]) => void): void {
+        this.onNewMessagesCallback = callback;
+    }
+
+    /**
+     * Set callback for notifications
+     */
+    onNotification(callback: (message: Message, chatName: string) => void): void {
+        this.onNotificationCallback = callback;
+    }
+
+    /**
+     * Initialize known messages (call after initial load)
+     */
+    initializeKnownMessages(messages: Message[]): void {
+        this.knownMessageIds.clear();
+        for (const msg of messages) {
+            this.knownMessageIds.add(msg.id);
+        }
+    }
+
+    /**
+     * Start polling for new messages
+     */
+    private startPolling(): void {
+        const config = vscode.workspace.getConfiguration('chitshare');
+        const interval = config.get<number>('pollInterval', 5000);
+
+        this.pollTimer = setInterval(async () => {
+            if (this.currentChat) {
+                try {
+                    let messages: Message[];
+                    if (this.currentChat.type === 'dm') {
+                        const result = await this.getDMMessages(this.currentChat.id);
+                        messages = result.messages;
+                    } else {
+                        messages = await this.getGroupMessages(this.currentChat.id);
+                    }
+
+                    // Find new messages
+                    const newMessages = messages.filter(m => !this.knownMessageIds.has(m.id));
+
+                    if (newMessages.length > 0) {
+                        // Track new messages
+                        for (const msg of newMessages) {
+                            this.knownMessageIds.add(msg.id);
+                        }
+
+                        // Send incremental update (no flicker)
+                        if (this.onNewMessagesCallback) {
+                            this.onNewMessagesCallback(newMessages);
+                        }
+
+                        // Send notification for messages from others
+                        if (this.onNotificationCallback && this.currentChat) {
+                            for (const msg of newMessages) {
+                                // Don't notify for own messages
+                                const currentUser = await this.apiClient.getCurrentUser();
+                                if (currentUser && msg.sender.id !== currentUser.id) {
+                                    this.onNotificationCallback(msg, this.currentChat.name);
+                                }
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('Polling error:', error);
+                }
+            }
+        }, interval);
+    }
+
+    /**
+     * Stop polling
+     */
+    stopPolling(): void {
+        if (this.pollTimer) {
+            clearInterval(this.pollTimer);
+            this.pollTimer = null;
+        }
+    }
+
+    /**
+     * Dispose resources
+     */
+    dispose(): void {
+        this.stopPolling();
+    }
+}
