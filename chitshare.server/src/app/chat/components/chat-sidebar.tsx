@@ -48,7 +48,7 @@ interface Group {
   memberCount: number;
 }
 
-export default function ChatSidebar({ user }: { user: User }) {
+export default function ChatSidebar({ user, className }: { user: User; className?: string }) {
   const pathname = usePathname();
   const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -165,7 +165,7 @@ export default function ChatSidebar({ user }: { user: User }) {
   );
 
   return (
-    <aside className="w-80 border-r border-border flex flex-col bg-card h-full" suppressHydrationWarning>
+    <aside className={`border-r border-border flex flex-col bg-card h-full ${className || "w-80"}`} suppressHydrationWarning>
       {/* Header with user info and actions */}
       <div className="p-3 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-2">

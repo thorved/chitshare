@@ -25,7 +25,7 @@ export default function ChatLayoutClient({ children, user }: ChatLayoutClientPro
     <div className="h-screen flex overflow-hidden">
       {/* Sidebar - hidden on mobile, shown on md+ */}
       <div className="hidden md:block">
-        <ChatSidebar user={user} />
+        <ChatSidebar user={user} className="w-80" />
       </div>
       
       <main 
