@@ -1,0 +1,14 @@
+services:
+  chitshare:
+    image: ghcr.io/thorved/chitshare:latest
+    container_name: chitshare
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      # Add other environment variables here if needed
+      # - JWT_SECRET=${JWT_SECRET}
+    # If you want to use a local .env file
+    # env_file:
+    #   - .env
