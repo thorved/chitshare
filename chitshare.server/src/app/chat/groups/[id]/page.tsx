@@ -155,7 +155,14 @@ export default function GroupChatPage() {
             }
 
             prevMessageCount.current = newMsgs.length;
-            setMessages(newMsgs);
+            
+            // Preserve local optimistic messages
+            setMessages(prev => {
+              const pendingMessages = prev.filter(m => m.status === 'sending' || m.status === 'error');
+              const newMsgIds = new Set(newMsgs.map((m: Message) => m.id));
+              const uniquePending = pendingMessages.filter(m => !newMsgIds.has(m.id));
+              return [...newMsgs, ...uniquePending];
+            });
 
             if (isInitialLoad.current) {
               isInitialLoad.current = false;
@@ -268,9 +275,13 @@ export default function GroupChatPage() {
       if (res.ok) {
         const data = await res.json();
         // Replace optimistic message
-        setMessages((prev) => 
-          prev.map((msg) => msg.id === tempId ? { ...data.message, status: 'sent' } : msg)
-        );
+        setMessages((prev) => {
+           const exists = prev.some(msg => msg.id === data.message.id);
+           if (exists) {
+             return prev.filter(msg => msg.id !== tempId);
+           }
+           return prev.map((msg) => msg.id === tempId ? { ...data.message, status: 'sent' } : msg);
+        });
         prevMessageCount.current += 1;
       } else {
          // Mark as error

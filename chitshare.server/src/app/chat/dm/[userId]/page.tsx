@@ -134,7 +134,16 @@ export default function DirectMessagePage() {
             }
 
             prevMessageCount.current = newMsgs.length;
-            setMessages(newMsgs);
+            
+            // Preserve local optimistic messages
+            setMessages(prev => {
+              const pendingMessages = prev.filter(m => m.status === 'sending' || m.status === 'error');
+              // Create a map of existing IDs to avoid duplicates if server caught up
+              const newMsgIds = new Set(newMsgs.map((m: Message) => m.id));
+              const uniquePending = pendingMessages.filter(m => !newMsgIds.has(m.id));
+              return [...newMsgs, ...uniquePending];
+            });
+            
             setUserInfo(data.user);
 
             // Scroll to bottom on initial load
@@ -252,9 +261,16 @@ export default function DirectMessagePage() {
       if (res.ok) {
         const data = await res.json();
         // Replace optimistic message with real one
-        setMessages((prev) => 
-          prev.map((msg) => msg.id === tempId ? { ...data.message, status: 'sent' } : msg)
-        );
+        setMessages((prev) => {
+           // Check if this message already exists (e.g. from a poll)
+           const exists = prev.some(msg => msg.id === data.message.id);
+           if (exists) {
+             // If it exists, remove the optimistic one
+             return prev.filter(msg => msg.id !== tempId);
+           }
+           // Otherwise replace it
+           return prev.map((msg) => msg.id === tempId ? { ...data.message, status: 'sent' } : msg);
+        });
         prevMessageCount.current += 1;
       } else {
         const data = await res.json();
