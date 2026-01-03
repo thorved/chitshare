@@ -58,6 +58,8 @@ export class ChatManager {
     private pollTimer: NodeJS.Timeout | null = null;
     private currentChat: ChatTarget | null = null;
     private knownMessageIds: Set<string> = new Set();
+    private lastPollTime: string | null = null;
+    private lastConversationMessageIds: Map<string, string> = new Map();
     private onMessagesUpdateCallback: ((messages: Message[]) => void) | null = null;
     private onNewMessagesCallback: ((messages: Message[]) => void) | null = null;
     private onNotificationCallback: ((message: Message, chatName: string) => void) | null = null;
@@ -260,14 +262,52 @@ export class ChatManager {
         const config = vscode.workspace.getConfiguration('chitshare');
         const interval = config.get<number>('pollInterval', 5000);
 
+        // Initial Seed of Conversation State
+        // We fetch conversations once to populate lastConversationMessageIds so that future updates trigger notifications
+        this.getConversations().then(conversations => {
+             for (const conv of conversations) {
+                 if (conv.lastMessage?.id) {
+                     this.lastConversationMessageIds.set(conv.user.id, conv.lastMessage.id);
+                 }
+             }
+        }).catch(err => console.error('Failed to seed conversations:', err));
+
         this.pollTimer = setInterval(async () => {
             try {
+                // Check if we need to poll (lightweight check)
+                let shouldFetch = false;
+                
+                try {
+                    const url = this.lastPollTime 
+                        ? `/api/notifications/status?since=${encodeURIComponent(this.lastPollTime)}`
+                        : `/api/notifications/status`;
+
+                    const status = await this.apiClient.request<{ hasUpdates: boolean; timestamp: string }>(url);
+                    shouldFetch = status.hasUpdates;
+                    
+                    if (status.timestamp) {
+                        this.lastPollTime = status.timestamp;
+                    }
+                } catch (e) {
+                    // On error, log and maybe skip this interval
+                    console.error('Poll check failed:', e);
+                    // We don't force fetch on error to avoid compounding server issues
+                }
+
+                if (!shouldFetch) {
+                    return;
+                }
+
                 // 1. Poll Conversations List (Status updates, unread counts)
                 if (this.onConversationsUpdateCallback) {
                     const [conversations, groups] = await Promise.all([
                         this.getConversations(),
                         this.getGroups(),
                     ]);
+                    
+                    // Check for new messages in conversations (for notifications)
+                    this.checkConversationNotifications(conversations);
+
                     this.onConversationsUpdateCallback(conversations, groups);
                 }
 
@@ -296,22 +336,57 @@ export class ChatManager {
                             this.onNewMessagesCallback(newMessages);
                         }
 
-                        // Send notification for messages from others
-                        if (this.onNotificationCallback && this.currentChat) {
-                            for (const msg of newMessages) {
-                                // Don't notify for own messages
-                                const currentUser = await this.apiClient.getCurrentUser();
-                                if (currentUser && msg.sender.id !== currentUser.id) {
-                                    this.onNotificationCallback(msg, this.currentChat.name);
-                                }
-                            }
-                        }
                     }
                 }
             } catch (error) {
                 console.error('Polling error:', error);
             }
         }, interval);
+    }
+
+    /**
+     * Check for new messages in conversations list to trigger notifications
+     */
+    private checkConversationNotifications(conversations: Conversation[]): void {
+        for (const conv of conversations) {
+            const userId = conv.user.id;
+            const lastMsgId = conv.lastMessage?.id;
+            
+            if (!lastMsgId) continue;
+
+            const existingId = this.lastConversationMessageIds.get(userId);
+            
+            // If we know this conversation and the message ID changed
+            if (existingId && existingId !== lastMsgId) {
+                // It's a new message
+                // Only notify if it's not from me
+                // We don't have current user ID easily available here without async call
+                // But we can check if it's not the currently open chat (which handles its own notifications)
+                
+                const isCurrentChat = this.currentChat && this.currentChat.type === 'dm' && this.currentChat.id === userId;
+                
+                if (!isCurrentChat && this.onNotificationCallback && conv.unreadCount > 0) {
+                     // We construct a partial message for the notification
+                     // Note: We might notify for own message if sent from another device, 
+                     // but check unreadCount > 0 usually implies it's from someone else (or we haven't read it)
+                     const msg: Message = {
+                         id: lastMsgId,
+                         content: conv.lastMessage.content,
+                         type: 'text', // Assumed
+                         sender: conv.user,
+                         createdAt: conv.lastMessage.createdAt
+                     };
+                     
+                     // We can't strictly check senderId vs currentUserId easily here without storing currentUserId
+                     // But unreadCount is a good proxy.
+                     
+                     this.onNotificationCallback(msg, conv.user.username);
+                }
+            }
+            
+            // Update known state
+            this.lastConversationMessageIds.set(userId, lastMsgId);
+        }
     }
 
     /**

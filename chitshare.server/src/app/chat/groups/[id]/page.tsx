@@ -15,6 +15,7 @@ import {
   Loader2,
 } from "lucide-react";
 import Link from "next/link";
+import { useNotificationPolling } from "@/hooks/use-polling";
 
 interface Message {
   id: string;
@@ -209,12 +210,12 @@ export default function GroupChatPage() {
     }
   }, [currentUserId, fetchGroup, fetchMessages]);
 
-  // Poll for new messages every 3 seconds
-  useEffect(() => {
-    if (!currentUserId) return;
-    const interval = setInterval(() => fetchMessages(), 3000);
-    return () => clearInterval(interval);
-  }, [currentUserId, fetchMessages]);
+  // Poll for new messages efficiently
+  useNotificationPolling({
+    onUpdates: () => fetchMessages(),
+    enabled: !!currentUserId,
+    interval: 3000
+  });
 
   // Handle scroll
   function handleScroll() {

@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import Link from "next/link";
 import { useUser } from "../../user-context";
 import { saveMessages, getCachedMessages, Message as StorageMessage } from "@/lib/chat-storage";
+import { useNotificationPolling } from "@/hooks/use-polling";
 
 interface Message extends StorageMessage {}
 
@@ -184,13 +185,12 @@ export default function DirectMessagePage() {
     }
   }, [currentUserId, fetchMessages]);
 
-  // Poll for new messages every 3 seconds
-  useEffect(() => {
-    if (!currentUserId) return;
-
-    const interval = setInterval(() => fetchMessages(), 3000);
-    return () => clearInterval(interval);
-  }, [currentUserId, fetchMessages]);
+  // Poll for new messages efficiently
+  useNotificationPolling({
+    onUpdates: () => fetchMessages(),
+    enabled: !!currentUserId,
+    interval: 3000
+  });
 
   // Handle scroll
   function handleScroll() {

@@ -85,6 +85,8 @@ export class ApiClient {
 
         const headers: Record<string, string> = {
             'Content-Type': 'application/json',
+            'Cache-Control': 'no-store',
+            'Pragma': 'no-cache',
         };
 
         if (requiresAuth) {
