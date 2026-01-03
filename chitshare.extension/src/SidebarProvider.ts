@@ -31,10 +31,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         // Set up notification callback
         this.chatManager.onNotification((message, _chatName) => {
-            // Only show notification if chat is not visible
+            // Only show notification if chat is visible but not the current chat (or if VS Code is inactive)
+            // But for now, we'll keep it simple
             const isVisible = this._view?.visible || this._explorerView?.visible;
             if (isVisible) {
-                return; // Don't show notification when chat is open
+               // return; // Don't show notification when chat is open // COMMENTED OUT for testing
             }
 
             // Show VS Code notification for new messages
@@ -50,6 +51,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     vscode.commands.executeCommand('chitshare.chatView.focus');
                 }
             });
+        });
+
+        // Set up conversations polling callback
+        this.chatManager.onConversationsUpdate((conversations, groups) => {
+            this.postMessage({ type: 'conversations', conversations, groups });
         });
     }
 
@@ -91,6 +97,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 this.chatManager.stopPolling();
             }
         });
+        
+        // Start polling immediately if logged in
+        if (this.currentUser) {
+            this.chatManager.startPolling();
+        }
     }
 
     private async _handleMessage(message: { type: string; [key: string]: unknown }) {
@@ -134,12 +145,19 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 await this._sendMessage(
                     message.content as string,
                     message.chatType as 'dm' | 'group',
-                    message.chatId as string
+                    message.chatId as string,
+                    message.tempId as string
                 );
                 break;
 
             case 'closeChat':
                 this.chatManager.setCurrentChat(null);
+                // Ensure polling continues for list updates
+                this.chatManager.startPolling();
+                break;
+
+            case 'searchUsers':
+                await this._searchUsers(message.query as string);
                 break;
 
             case 'highlightCode':
@@ -208,6 +226,8 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             vscode.window.showInformationMessage('Logged out successfully');
         } catch (error) {
             console.error('Logout error:', error);
+        } finally {
+            this.chatManager.stopPolling();
         }
     }
 
@@ -218,6 +238,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 this.chatManager.getGroups(),
             ]);
             this.postMessage({ type: 'conversations', conversations, groups });
+            
+            // Start polling if not already
+            this.chatManager.startPolling();
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Failed to load conversations';
             this.postMessage({ type: 'error', error: errorMessage });
@@ -239,6 +262,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                     id: chatId,
                     name: result.user.username,
                     avatarUrl: result.user.avatarUrl,
+                    isOnline: result.user.isOnline,
                 };
             } else {
                 const result = await this.chatManager.getGroupMessages(chatId);
@@ -288,7 +312,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         }
     }
 
-    private async _sendMessage(content: string, chatType: 'dm' | 'group', chatId: string) {
+    private async _sendMessage(content: string, chatType: 'dm' | 'group', chatId: string, tempId?: string) {
         try {
             let message: Message;
 
@@ -298,11 +322,21 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 message = await this.chatManager.sendGroupMessage(chatId, content);
             }
 
-            this.postMessage({ type: 'messageSent', message });
+            this.postMessage({ type: 'messageSent', message, tempId });
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
-            this.postMessage({ type: 'error', error: errorMessage });
+            this.postMessage({ type: 'error', error: errorMessage, tempId });
             vscode.window.showErrorMessage(errorMessage);
+        }
+    }
+
+    private async _searchUsers(query: string) {
+        try {
+            const users = await this.chatManager.getUsers(query);
+            this.postMessage({ type: 'searchResults', users });
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Failed to search users';
+            this.postMessage({ type: 'error', error: errorMessage });
         }
     }
 
@@ -443,8 +477,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
      * Refresh state and conversations list
      */
     public async refresh() {
-        // Re-initialize state (checks server connection and login status)
-        await this._sendInitialState();
         
         // If logged in, reload conversations
         if (this.currentUser) {

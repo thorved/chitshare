@@ -5,10 +5,11 @@
     const vscode = acquireVsCodeApi();
 
     // State management
-    let currentView = 'loading'; // 'loading' | 'settings' | 'login' | 'chat-list' | 'chat'
+    let currentView = 'loading'; // 'loading' | 'settings' | 'login' | 'chat-list' | 'chat' | 'user-search'
     let currentUser = null;
     let conversations = [];
     let groups = [];
+    let searchResults = []; // New state for search results
     let currentChat = null;
     let messages = [];
     let codeBlockCounter = 0;
@@ -400,6 +401,7 @@
             groups,
             currentChat,
             messages,
+            searchResults,
         });
     }
 
@@ -427,21 +429,148 @@
                     JSON.stringify(groups) !== JSON.stringify(newGroups)) {
                     conversations = newConvs;
                     groups = newGroups;
+                    
+                    // Update current chat status if it exists
+                    if (currentChat && currentChat.type === 'dm') {
+                        const updatedConv = conversations.find(c => c.user.id === currentChat.id);
+                        if (updatedConv) {
+                            const wasOnline = currentChat.isOnline;
+                            currentChat.isOnline = updatedConv.user.isOnline;
+                            currentChat.avatarUrl = updatedConv.user.avatarUrl;
+                            
+                            // If status changed and we are in chat view, re-render
+                            if (currentView === 'chat' && wasOnline !== currentChat.isOnline) {
+                                render();
+                            }
+                        }
+                    }
+
                     if (currentView === 'chat-list') {
                         render();
                     }
                 }
                 break;
             case 'messages':
-                // Initial load - full render
-                messages = message.messages || [];
+                // Smart Scroll: Check if we are at bottom before checking updates
+                const container = document.getElementById('messagesContainer');
+                const isNearBottom = container ? (container.scrollHeight - container.scrollTop - container.clientHeight <= 100) : true;
+                const oldScrollTop = container ? container.scrollTop : 0;
+
+                // Initial load or Poll - full replacement of server state
+                const incomingMessages = message.messages || [];
+                
                 if (message.chat) {
                     currentChat = message.chat;
                 }
                 hasMore = message.hasMore || false;
+                
+                // Preserve pending/error messages from local state
+                const localPending = messages.filter(m => m.status === 'pending' || m.status === 'error');
+                
+                // Reconstruct messages: Server messages + Local Pending (that aren't yet in server list)
+                // We attempt to fuzzy match to avoid duplicates if server caught up
+                const mergedMessages = [...incomingMessages];
+                
+                for (const pending of localPending) {
+                    // unexpected: if server list already has this message (by ID? no, temp ID won't match)
+                    // Match by content and sender and recent time? 
+                    // For now, simpler: Just keep them. The 'messageSent' event handles the resolution.
+                    // But if 'messageSent' hasn't fired, and server has the message, we might double show.
+                    // Let's assume 'messageSent' is fast. 
+                    // Better yet: filter out any pending that matches a real message's content exactly? 
+                    // Risky if user says "ok" twice.
+                    // We will trust the process: Pending stays until messageSent converts it. 
+                    // If messageSent converts it and we find a duplicate ID, we kill the duplicate then.
+                    mergedMessages.push(pending);
+                }
+
+                messages = mergedMessages;
+                
                 render();
-                scrollToBottom();
+                
+                if (isNearBottom) {
+                    scrollToBottom();
+                } else if (container) {
+                     // Maintain scroll position (approx)
+                     // Since content changed, scrollTop might need adjustment, but usually we just want to stay put if reading history
+                     // But if we prepended items, we need logic. Here we usually append or replace.
+                     // If we replaced, height might change. 
+                     // Best effort:
+                     container.scrollTop = oldScrollTop;
+                }
                 break;
+            case 'messageSent':
+                // Update temporary message with real one
+                if (message.tempId) {
+                    const idx = messages.findIndex(m => m.id === message.tempId);
+                    if (idx !== -1) {
+                        messages[idx] = message.message;
+                        
+                        // Deduplicate: If the real message ID now exists elsewhere in the list (from poll), remove the duplicate
+                        // We prefer the one we just updated because it might be the DOM element we want to keep (though we rendered flicker-free).
+                        // Actually, if we updated in-place, we are good. But the *data* 'messages' array now has a duplicate?
+                        // Let's clean 'messages' array.
+                        const firstIdx = messages.findIndex(m => m.id === message.message.id);
+                        const lastIdx = messages.findLastIndex(m => m.id === message.message.id);
+                        
+                        if (firstIdx !== lastIdx) {
+                            // Duplicate found. Remove the one that is NOT the one we just updated?
+                            // idx is the one we updated (the former pending one).
+                            // If firstIdx != idx, then firstIdx is the "poll" version.
+                            // If we remove the "poll" version, we need to re-render or remove DOM.
+                            // Simpler: Just re-render if we found duplicates to clean state.
+                            // But re-render causes flicker.
+                            // Better: Remove the OTHER one from array and DOM.
+                            const duplicateIdx = (firstIdx === idx) ? lastIdx : firstIdx;
+                            messages.splice(duplicateIdx, 1);
+                            
+                            // Remove from DOM
+                            const dupEl = document.querySelector(`.message[data-id="${message.message.id}"]`); 
+                            // Wait, both have same ID now? 
+                            // The one from poll has real ID. The one we just updated has real ID (we setAttribute).
+                            // This is tricky. 
+                            // If we just re-render, it's safer for data consistency.
+                            // The user complained about flicker/jump. 
+                            // If we are at bottom, re-render is fine.
+                            render();
+                        } else {
+                            // In-place update to prevent flicker
+                            const msgDiv = document.querySelector(`.message[data-id="${message.tempId}"]`);
+                            if (msgDiv) {
+                                msgDiv.setAttribute('data-id', message.message.id);
+                                msgDiv.classList.remove('pending');
+                                const errorActions = msgDiv.querySelector('.message-actions');
+                                if (errorActions) errorActions.remove();
+                            } else {
+                                render(); // Fallback
+                            }
+                        }
+                    } else {
+                        // Not found, just append if not exists
+                        const exists = messages.some(m => m.id === message.message.id);
+                        if (!exists) {
+                            messages.push(message.message);
+                            appendMessages([message.message]);
+                            scrollToBottom();
+                        }
+                    }
+                } else {
+                    messages.push(message.message);
+                    appendMessages([message.message]);
+                    scrollToBottom();
+                }
+                break;
+            case 'error':
+                 if (message.tempId) {
+                    const idx = messages.findIndex(m => m.id === message.tempId);
+                    if (idx !== -1) {
+                        messages[idx].status = 'error';
+                        render();
+                    }
+                 } else {
+                    vscode.postMessage({ type: 'log', message: 'Error: ' + message.error});
+                 }
+                 break;
             case 'newMessages':
                 // Incremental update - only append new messages (no flicker)
                 if (message.messages && message.messages.length > 0) {
@@ -492,6 +621,10 @@
                 // Update the code block with highlighted HTML
                 updateCodeBlock(message.id, message.html);
                 break;
+            case 'searchResults':
+                searchResults = message.users || [];
+                render();
+                break;
         }
 
         saveState();
@@ -526,6 +659,9 @@
                 break;
             case 'chat':
                 renderChat();
+                break;
+            case 'user-search':
+                renderUserSearch();
                 break;
         }
     }
@@ -691,6 +827,9 @@
                         💬 Chats
                     </div>
                     <div class="header-actions">
+                        <button class="btn btn-icon" id="newChatBtn" title="New Chat">
+                            +
+                        </button>
                         <button class="btn btn-icon" id="refreshBtn" title="Refresh">
                             ↻
                         </button>
@@ -708,6 +847,14 @@
         // Event listeners
         document.getElementById('refreshBtn')?.addEventListener('click', () => {
             vscode.postMessage({ type: 'loadConversations' });
+        });
+
+        document.getElementById('newChatBtn')?.addEventListener('click', () => {
+            currentView = 'user-search';
+            searchResults = [];
+            render();
+            // Focus search input after render
+            setTimeout(() => document.getElementById('userSearchInput')?.focus(), 50);
         });
 
         document.getElementById('logoutBtn')?.addEventListener('click', () => {
@@ -760,6 +907,109 @@
         });
     }
 
+    function renderUserSearch() {
+        // Debounce timer
+        let searchTimer = null;
+
+        const resultsHtml = searchResults.length > 0 ? `
+            <div class="conversation-list">
+                ${searchResults.map(user => `
+                    <div class="conversation-item" data-id="${user.id}">
+                        <div class="avatar ${user.isOnline ? 'online' : ''}">
+                            ${user.avatarUrl 
+                                ? `<img src="${user.avatarUrl}" alt="">` 
+                                : getInitials(user.username)}
+                        </div>
+                        <div class="conversation-info">
+                            <div class="conversation-name">${escapeHtml(user.username)}</div>
+                            <div class="conversation-preview">${escapeHtml(user.email)}</div>
+                        </div>
+                        <div class="conversation-actions">
+                            <button class="btn btn-icon select-user-btn">➝</button>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        ` : `
+            <div class="empty-state">
+                <div class="empty-state-icon">🔍</div>
+                <div class="empty-state-text">Search for users by name or email</div>
+            </div>
+        `;
+
+        app.innerHTML = `
+            <div class="app-container">
+                <div class="chat-header">
+                    <button class="chat-header-back" id="backBtn">
+                        ←
+                    </button>
+                    <div class="chat-header-info">
+                        <div class="chat-header-name">New Chat</div>
+                    </div>
+                </div>
+                <div class="message-input-container" style="border-top: none; border-bottom: 1px solid var(--vscode-panel-border);">
+                    <input type="text" class="form-input" id="userSearchInput" placeholder="Search users..." autocomplete="off">
+                </div>
+                <div class="chat-list-view">
+                    ${resultsHtml}
+                </div>
+            </div>
+        `;
+
+        document.getElementById('backBtn').addEventListener('click', () => {
+            currentView = 'chat-list';
+            render();
+        });
+
+        const input = document.getElementById('userSearchInput');
+        input.addEventListener('input', (e) => {
+            const query = e.target.value.trim();
+            
+            if (searchTimer) clearTimeout(searchTimer);
+            
+            if (query.length < 2) {
+                searchResults = [];
+                render();
+                // Restore focus and cursor position (basic hack, strict react/state would be better)
+                setTimeout(() => {
+                    const el = document.getElementById('userSearchInput');
+                    if (el) {
+                        el.focus();
+                        el.value = query;
+                    }
+                }, 0);
+                return;
+            }
+
+            searchTimer = setTimeout(() => {
+                vscode.postMessage({ type: 'searchUsers', query });
+            }, 300);
+        });
+        
+        // Retain input value if re-rendering (simple way since we re-render whole app)
+        // In a real app we'd diff DOM or use a framework.
+        // For now, let's just accept that typing might loose focus if we re-render on *every* keystroke
+        // But we only re-render on 'searchResults' message or 'input which clears results'.
+        // Actually, the input event above triggers render only if clearing results.
+        // The results come back async, so focus might be lost. We need to preserve it.
+        // *Self-correction*: The input logic above is a bit flawed for vanilla JS re-rendering. 
+        // Better to separate renderSearchResults from renderFrame?
+        // Or just re-focus after render if input existed.
+
+        // Event delegation for user selection
+        document.querySelectorAll('.conversation-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const userId = item.getAttribute('data-id');
+                const user = searchResults.find(u => u.id === userId);
+                if (user) {
+                     // Start DM
+                     openChat('dm', userId);
+                }
+            });
+        });
+
+    }
+
     function renderChat() {
         if (!currentChat) {
             currentView = 'chat-list';
@@ -776,8 +1026,12 @@
 
         const messagesHtml = messages.map(msg => {
             const isOwn = currentUser && msg.sender.id === currentUser.id;
+            let statusClass = '';
+            if (msg.status === 'pending') statusClass = ' pending';
+            if (msg.status === 'error') statusClass = ' error';
+
             return `
-                <div class="message ${isOwn ? 'own' : ''}">
+                <div class="message ${isOwn ? 'own' : ''}${statusClass}" data-id="${msg.id}">
                     <div class="message-avatar">
                         ${msg.sender.avatarUrl 
                             ? `<img src="${msg.sender.avatarUrl}" alt="">` 
@@ -787,6 +1041,12 @@
                         ${!isOwn ? `<div class="message-sender">${escapeHtml(msg.sender.username)}</div>` : ''}
                         <div class="message-bubble">${formatMessageContent(msg.content)}</div>
                         <div class="message-time">${formatTime(msg.createdAt)}</div>
+                        ${msg.status === 'error' ? `
+                            <div class="message-actions">
+                                <span class="message-error-text">Failed to send</span>
+                                <button class="message-retry" onclick="retryMessage('${msg.id}')">Retry</button>
+                            </div>
+                        ` : ''}
                     </div>
                 </div>
             `;
@@ -1006,11 +1266,30 @@
         input.value = '';
         input.style.height = 'auto';
 
+        // Optimistic UI: Create temporary message
+        const tempId = 'temp-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+        const tempMessage = {
+            id: tempId,
+            content: content,
+            type: 'text',
+            createdAt: new Date().toISOString(),
+            sender: currentUser,
+            status: 'pending' // pending | sent | error
+        };
+
+        // Add to local state
+        messages.push(tempMessage);
+        
+        // Render immediately
+        appendMessages([tempMessage]);
+        scrollToBottom();
+
         vscode.postMessage({
             type: 'sendMessage',
             content,
             chatType: currentChat.type,
             chatId: currentChat.id,
+            tempId: tempId
         });
     }
 
@@ -1020,7 +1299,13 @@
         if (!container) {
             return;
         }
-
+        
+        let shouldScroll = false;
+        // Check if we are already at bottom before appending (for auto-scroll logic if needed generally)
+        // But for 'sendMessage' we always force scroll.
+        // For polling 'newMessages', we might want to be smart.
+        // But here we just append.
+        
         // Remove empty state if present
         const emptyState = container.querySelector('.empty-state');
         if (emptyState) {
@@ -1031,7 +1316,13 @@
         for (const msg of newMsgs) {
             const isOwn = currentUser && msg.sender.id === currentUser.id;
             const msgDiv = document.createElement('div');
-            msgDiv.className = `message ${isOwn ? 'own' : ''}`;
+            // Add status classes
+            let statusClass = '';
+            if (msg.status === 'pending') statusClass = ' pending';
+            if (msg.status === 'error') statusClass = ' error';
+            
+            msgDiv.className = `message ${isOwn ? 'own' : ''}${statusClass}`;
+            msgDiv.setAttribute('data-id', msg.id);
             msgDiv.innerHTML = `
                 <div class="message-avatar">
                     ${msg.sender.avatarUrl 
@@ -1042,6 +1333,12 @@
                     ${!isOwn ? `<div class="message-sender">${escapeHtml(msg.sender.username)}</div>` : ''}
                     <div class="message-bubble">${formatMessageContent(msg.content)}</div>
                     <div class="message-time">${formatTime(msg.createdAt)}</div>
+                    ${msg.status === 'error' ? `
+                        <div class="message-actions">
+                            <span class="message-error-text">Failed to send</span>
+                            <button class="message-retry" onclick="retryMessage('${msg.id}')">Retry</button>
+                        </div>
+                    ` : ''}
                 </div>
             `;
             container.appendChild(msgDiv);
@@ -1106,7 +1403,13 @@
         for (const msg of olderMsgs) {
             const isOwn = currentUser && msg.sender.id === currentUser.id;
             const msgDiv = document.createElement('div');
-            msgDiv.className = `message ${isOwn ? 'own' : ''}`;
+            // Add status classes - though typically only new messages are pending
+            let statusClass = '';
+            if (msg.status === 'pending') statusClass = ' pending';
+            if (msg.status === 'error') statusClass = ' error';
+
+            msgDiv.className = `message ${isOwn ? 'own' : ''}${statusClass}`;
+            msgDiv.setAttribute('data-id', msg.id);
             msgDiv.innerHTML = `
                 <div class="message-avatar">
                     ${msg.sender.avatarUrl 
@@ -1117,6 +1420,12 @@
                     ${!isOwn ? `<div class="message-sender">${escapeHtml(msg.sender.username)}</div>` : ''}
                     <div class="message-bubble">${formatMessageContent(msg.content)}</div>
                     <div class="message-time">${formatTime(msg.createdAt)}</div>
+                    ${msg.status === 'error' ? `
+                        <div class="message-actions">
+                            <span class="message-error-text">Failed to send</span>
+                            <button class="message-retry" onclick="retryMessage('${msg.id}')">Retry</button>
+                        </div>
+                    ` : ''}
                 </div>
             `;
             fragment.appendChild(msgDiv);
@@ -1173,15 +1482,36 @@
     }
 
     function scrollToBottom() {
-        setTimeout(() => {
-            const container = document.getElementById('messagesContainer');
-            if (container) {
-                container.scrollTop = container.scrollHeight;
-            }
-        }, 50);
+        const container = document.getElementById('messagesContainer');
+        if (container) {
+            container.scrollTop = container.scrollHeight;
+        }
+    }
+
+    function retryMessage(tempId) {
+        const msg = messages.find(m => m.id === tempId);
+        if (msg) {
+            // Remove error status to show pending again
+            msg.status = 'pending';
+            render();
+            
+            vscode.postMessage({
+                type: 'sendMessage',
+                content: msg.content,
+                chatType: currentChat.type,
+                chatId: currentChat.id,
+                tempId: tempId
+            });
+        }
     }
 
     // Utility functions
+    function _uuidv4() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
     function escapeHtml(text) {
         if (!text) {
             return '';

@@ -55,6 +55,7 @@ export class ChatManager {
     private onMessagesUpdateCallback: ((messages: Message[]) => void) | null = null;
     private onNewMessagesCallback: ((messages: Message[]) => void) | null = null;
     private onNotificationCallback: ((message: Message, chatName: string) => void) | null = null;
+    private onConversationsUpdateCallback: ((conversations: Conversation[], groups: Group[]) => void) | null = null;
 
     constructor(apiClient: ApiClient) {
         this.apiClient = apiClient;
@@ -164,11 +165,10 @@ export class ChatManager {
      */
     setCurrentChat(chat: ChatTarget | null): void {
         this.currentChat = chat;
-        this.knownMessageIds.clear();
-        this.stopPolling();
-        
+        // Keep polling even if left chat, but just for conversations list
+        // However, we want to clear known messages if we switch chats
         if (chat) {
-            this.startPolling();
+            this.knownMessageIds.clear();
         }
     }
 
@@ -201,6 +201,13 @@ export class ChatManager {
     }
 
     /**
+     * Set callback for conversations list update
+     */
+    onConversationsUpdate(callback: (conversations: Conversation[], groups: Group[]) => void): void {
+        this.onConversationsUpdateCallback = callback;
+    }
+
+    /**
      * Initialize known messages (call after initial load)
      */
     initializeKnownMessages(messages: Message[]): void {
@@ -218,15 +225,30 @@ export class ChatManager {
     }
 
     /**
-     * Start polling for new messages
+     * Start polling for new messages and conversations
      */
-    private startPolling(): void {
+    startPolling(): void {
+        // Prevent multiple intervals
+        if (this.pollTimer) {
+            return;
+        }
+
         const config = vscode.workspace.getConfiguration('chitshare');
         const interval = config.get<number>('pollInterval', 5000);
 
         this.pollTimer = setInterval(async () => {
-            if (this.currentChat) {
-                try {
+            try {
+                // 1. Poll Conversations List (Status updates, unread counts)
+                if (this.onConversationsUpdateCallback) {
+                    const [conversations, groups] = await Promise.all([
+                        this.getConversations(),
+                        this.getGroups(),
+                    ]);
+                    this.onConversationsUpdateCallback(conversations, groups);
+                }
+
+                // 2. Poll Active Chat (New messages)
+                if (this.currentChat) {
                     let messages: Message[];
                     if (this.currentChat.type === 'dm') {
                         const result = await this.getDMMessages(this.currentChat.id);
@@ -261,9 +283,9 @@ export class ChatManager {
                             }
                         }
                     }
-                } catch (error) {
-                    console.error('Polling error:', error);
                 }
+            } catch (error) {
+                console.error('Polling error:', error);
             }
         }, interval);
     }

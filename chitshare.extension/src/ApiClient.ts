@@ -6,6 +6,8 @@ export interface User {
     username: string;
     avatarUrl: string | null;
     isAdmin: boolean;
+    isOnline: boolean;
+    lastSeen: string | null;
 }
 
 export interface LoginResponse {
