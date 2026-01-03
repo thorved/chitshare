@@ -440,10 +440,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     /**
-     * Refresh conversations list
+     * Refresh state and conversations list
      */
     public async refresh() {
-        await this._loadConversations();
+        // Re-initialize state (checks server connection and login status)
+        await this._sendInitialState();
+        
+        // If logged in, reload conversations
+        if (this.currentUser) {
+            await this._loadConversations();
+        }
     }
 
     /**
