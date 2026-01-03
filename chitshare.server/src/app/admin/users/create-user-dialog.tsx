@@ -38,9 +38,17 @@ export function CreateUserDialog() {
     setLoading(true);
 
     try {
+      const token = document.cookie
+        .split("; ")
+        .find((row) => row.startsWith("auth_token="))
+        ?.split("=")[1];
+
       const res = await fetch("/api/admin/users", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(formData),
       });
 
