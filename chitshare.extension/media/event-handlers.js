@@ -273,7 +273,7 @@ export function attachChatListListeners() {
     });
 }
 
-function openChat(type, id) {
+function openChat(type, id, details = null) {
     state.currentView = 'chat';
     
     if (type === 'dm') {
@@ -285,6 +285,14 @@ function openChat(type, id) {
                 name: conv.user.username,
                 isOnline: conv.user.isOnline,
                 avatarUrl: conv.user.avatarUrl,
+            };
+        } else if (details) {
+            state.currentChat = {
+                type: 'dm',
+                id: id,
+                name: details.username,
+                isOnline: details.isOnline,
+                avatarUrl: details.avatarUrl,
             };
         }
     } else {
@@ -349,7 +357,7 @@ export function attachUserSearchListeners() {
             const userId = item.getAttribute('data-id');
             const user = state.searchResults.find(u => u.id === userId);
             if (user) {
-                 openChat('dm', userId);
+                 openChat('dm', userId, user);
             }
         });
     });
