@@ -147,9 +147,6 @@ function handleMessagesUpdate(message) {
 }
 
 function handleMessageSent(message) {
-    // Debug: Log what's received from server after file upload
-    console.log('handleMessageSent received:', JSON.stringify(message, null, 2));
-    
     // Update temporary message with real one
     if (message.tempId) {
         const idx = state.messages.findIndex(m => m.id === message.tempId);
@@ -444,10 +441,7 @@ function setupDragDropListeners() {
 }
 
 function uploadFile(file) {
-    console.log('uploadFile called with:', file.name, file.size, file.type);
-    
     if (!state.currentChat) {
-        console.log('No current chat, aborting upload');
         return;
     }
     
@@ -474,12 +468,11 @@ function uploadFile(file) {
     // Send file to extension for upload
     const reader = new FileReader();
     reader.onerror = (e) => {
-        console.error('FileReader error:', e);
+        // Handle error silently or show toast handled by error listener?
+        // console.error('FileReader error:', e); 
     };
     reader.onload = () => {
-        console.log('FileReader loaded, sending to extension');
         const base64 = reader.result.split(',')[1];
-        console.log('Base64 length:', base64?.length || 0);
         vscode.postMessage({
             type: 'uploadFile',
             fileName: file.name,
@@ -490,9 +483,7 @@ function uploadFile(file) {
             chatId: state.currentChat.id,
             tempId: tempId
         });
-        console.log('postMessage sent to extension');
     };
-    console.log('Starting FileReader.readAsDataURL');
     reader.readAsDataURL(file);
 }
 

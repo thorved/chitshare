@@ -105,11 +105,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     private async _handleMessage(message: { type: string; [key: string]: unknown }) {
-        // Debug: log all incoming messages
-        if (message.type === 'uploadFile') {
-            console.log('Extension received uploadFile message:', message.fileName);
-        }
-        
         switch (message.type) {
             case 'ready':
                 await this._sendInitialState();
@@ -181,7 +176,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 break;
             
             case 'uploadFile':
-                console.log('Processing uploadFile...');
                 await this._uploadFile(
                     message.fileName as string,
                     message.mimeType as string,
@@ -480,8 +474,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             const serverUrl = this.apiClient.getServerUrl();
             const token = await this.apiClient.getToken();
             
-            console.log('Starting file upload:', { fileName, mimeType, size, chatType, chatId });
-            
             // Convert base64 to buffer
             const buffer = Buffer.from(base64Data, 'base64');
             
@@ -497,8 +489,6 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 formData.append('groupId', chatId);
             }
             
-            console.log('Sending upload request to:', `${serverUrl}/api/files/upload`);
-            
             const response = await fetch(`${serverUrl}/api/files/upload`, {
                 method: 'POST',
                 headers: {
@@ -507,27 +497,19 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 body: formData,
             });
             
-            console.log('Upload response status:', response.status);
-            
             if (!response.ok) {
                 const data = await response.json() as { error?: string };
-                console.error('Upload error response:', data);
                 throw new Error(data.error || 'Upload failed');
             }
             
             const data = await response.json() as any;
-            console.log('Upload success, full response data:', JSON.stringify(data));
-            console.log('Upload success, message:', data.message);
             
             if (data.message) {
                 this.postMessage({ type: 'messageSent', message: data.message, tempId });
             } else {
-                console.warn('Upload success but no message returned', data);
-                // Fallback? If we have a file but no message, maybe we construct one?
-                // But for now let's just log it.
+                // Fallback or error logging if needed
             }
         } catch (error) {
-            console.error('Upload exception:', error);
             const errorMessage = error instanceof Error ? error.message : 'Failed to upload file';
             this.postMessage({ type: 'error', error: errorMessage, tempId });
             vscode.window.showErrorMessage(errorMessage);
