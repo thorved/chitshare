@@ -298,10 +298,16 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 const result = await this.chatManager.getGroupMessages(chatId);
                 messages = result.messages;
                 hasMore = result.hasMore;
+                
+                // Look up the actual group name from the groups list
+                const groups = await this.chatManager.getGroups();
+                const group = groups.find(g => g.id === chatId);
+                
                 chat = {
                     type: 'group',
                     id: chatId,
-                    name: 'Group', // Will be updated from frontend state
+                    name: group?.name || 'Group',
+                    avatarUrl: group?.avatarUrl,
                 };
             }
 
