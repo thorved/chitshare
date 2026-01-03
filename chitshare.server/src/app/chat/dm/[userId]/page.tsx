@@ -6,12 +6,14 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MessageContent, isCodeMessage } from "@/components/MessageContent";
+import { FileMessage } from "@/components/FileMessage";
 import {
   Send,
   ArrowLeft,
   MoreVertical,
   ChevronDown,
   Loader2,
+  Upload,
 } from "lucide-react";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -41,6 +43,8 @@ export default function DirectMessagePage() {
   const [hasNewMessages, setHasNewMessages] = useState(false);
   const [hasMore, setHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const isInitialLoad = useRef(true);
   const prevMessageCount = useRef(0);
@@ -291,6 +295,115 @@ export default function DirectMessagePage() {
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
 
+  // Drag and drop handlers
+  function handleDragEnter(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer.types.includes("Files")) {
+      setIsDragOver(true);
+    }
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Only set false if leaving the main container
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    if (
+      e.clientX <= rect.left ||
+      e.clientX >= rect.right ||
+      e.clientY <= rect.top ||
+      e.clientY >= rect.bottom
+    ) {
+      setIsDragOver(false);
+    }
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  async function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+
+    const files = e.dataTransfer.files;
+    if (files.length === 0) return;
+
+    // Upload first file (could extend to multiple)
+    await uploadFile(files[0]);
+  }
+
+  async function uploadFile(file: File) {
+    if (uploading) return;
+
+    const tempId = `file-${Date.now()}`;
+
+    // Create optimistic message
+    const optimisticMessage: Message = {
+      id: tempId,
+      content: file.name,
+      type: "file",
+      senderId: currentUserId!,
+      sender: {
+        id: currentUserId!,
+        username: "",
+        avatarUrl: null,
+      },
+      createdAt: new Date().toISOString(),
+      status: "sending",
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+    setTimeout(scrollToBottom, 50);
+    setUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("recipientId", userId);
+
+      const res = await fetch("/api/files/upload", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        // Replace optimistic message with real one
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === tempId ? { ...data.message, status: "sent" } : msg
+          )
+        );
+        prevMessageCount.current += 1;
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Failed to upload file");
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === tempId ? { ...msg, status: "error" } : msg
+          )
+        );
+      }
+    } catch (error) {
+      console.error("Upload error:", error);
+      toast.error("Failed to upload file");
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.id === tempId ? { ...msg, status: "error" } : msg
+        )
+      );
+    } finally {
+      setUploading(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
@@ -300,7 +413,22 @@ export default function DirectMessagePage() {
   }
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col h-full">
+    <div 
+      className="flex-1 min-h-0 flex flex-col h-full relative"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {/* Drop zone overlay */}
+      {isDragOver && (
+        <div className="absolute inset-0 bg-primary/10 border-2 border-dashed border-primary rounded-lg z-50 flex items-center justify-center pointer-events-none">
+          <div className="flex flex-col items-center gap-2 text-primary">
+            <Upload className="w-12 h-12" />
+            <p className="text-lg font-medium">Drop file to send</p>
+          </div>
+        </div>
+      )}
       {/* Header */}
       <div className="border-b border-border p-3 md:p-4 flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2 md:gap-3">
@@ -373,7 +501,8 @@ export default function DirectMessagePage() {
                 const isOwn =
                   msg.sender?.id === currentUserId ||
                   msg.senderId === currentUserId;
-                const isCode = isCodeMessage(msg.content);
+                const isCode = msg.type !== "file" && isCodeMessage(msg.content);
+                const isFile = msg.type === "file";
                 return (
                   <div
                     key={msg.id}
@@ -387,22 +516,26 @@ export default function DirectMessagePage() {
                         </AvatarFallback>
                       </Avatar>
                     )}
-                      <div
-                        className={`max-w-[85%] md:max-w-[80%] ${
-                          isCode
-                            ? ""
-                            : `rounded-2xl px-3 py-2 md:px-4 md:py-2 ${
-                                isOwn
-                                  ? "bg-primary text-primary-foreground rounded-br-md"
-                                  : "bg-muted rounded-bl-md"
-                              }`
-                        } ${msg.status === "sending" ? "opacity-70" : ""} ${msg.status === "error" ? "border border-destructive bg-destructive/10 text-destructive" : ""}`}
-                      >
-                      <MessageContent content={msg.content} isOwn={isOwn} />
+                    <div
+                      className={`max-w-[85%] md:max-w-[80%] ${
+                        isCode || isFile
+                          ? ""
+                          : `rounded-2xl px-3 py-2 md:px-4 md:py-2 ${
+                              isOwn
+                                ? "bg-primary text-primary-foreground rounded-br-md"
+                                : "bg-muted rounded-bl-md"
+                            }`
+                      } ${msg.status === "sending" ? "opacity-70" : ""} ${msg.status === "error" ? "border border-destructive bg-destructive/10 text-destructive" : ""}`}
+                    >
+                      {isFile && (msg as any).file ? (
+                        <FileMessage file={(msg as any).file} isOwn={isOwn} />
+                      ) : (
+                        <MessageContent content={msg.content} isOwn={isOwn} />
+                      )}
                       <p
                         className={`text-[10px] md:text-xs mt-1 ${
                           isOwn
-                            ? isCode ? "text-muted-foreground text-right" : "text-primary-foreground/70 text-right"
+                            ? isCode || isFile ? "text-muted-foreground text-right" : "text-primary-foreground/70 text-right"
                             : "text-muted-foreground"
                         }`}
                       >

@@ -78,6 +78,7 @@ model Message {
   sender   User   @relation("SentMessages", fields: [senderId], references: [id], onDelete: Cascade)
   receiver User?  @relation("ReceivedMessages", fields: [receiverId], references: [id], onDelete: Cascade)
   group    Group? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  file     File?  // attached file for type="file"
 
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
@@ -94,10 +95,11 @@ model File {
 
   uploaderId String
   groupId    String? // if shared in a group
-  messageId  String? // if attached to a message
+  messageId  String? @unique // if attached to a message
 
-  uploader User   @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
-  group    Group? @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  uploader User     @relation(fields: [uploaderId], references: [id], onDelete: Cascade)
+  group    Group?   @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  message  Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
   createdAt DateTime @default(now())
 }

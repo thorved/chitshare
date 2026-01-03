@@ -105,6 +105,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     private async _handleMessage(message: { type: string; [key: string]: unknown }) {
+        // Debug: log all incoming messages
+        if (message.type === 'uploadFile') {
+            console.log('Extension received uploadFile message:', message.fileName);
+        }
+        
         switch (message.type) {
             case 'ready':
                 await this._sendInitialState();
@@ -172,6 +177,33 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 await this._openInEditor(
                     message.code as string,
                     message.language as string
+                );
+                break;
+            
+            case 'uploadFile':
+                console.log('Processing uploadFile...');
+                await this._uploadFile(
+                    message.fileName as string,
+                    message.mimeType as string,
+                    message.size as number,
+                    message.data as string,
+                    message.chatType as 'dm' | 'group',
+                    message.chatId as string,
+                    message.tempId as string
+                );
+                break;
+            
+            case 'openFileInVscode':
+                await this._openFileInVscode(
+                    message.fileId as string,
+                    message.filename as string
+                );
+                break;
+            
+            case 'downloadFile':
+                await this._downloadFile(
+                    message.fileId as string,
+                    message.filename as string
                 );
                 break;
         }
@@ -432,6 +464,152 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         } catch (error) {
             console.error('Failed to open in editor:', error);
             vscode.window.showErrorMessage('Failed to open code in editor');
+        }
+    }
+
+    private async _uploadFile(
+        fileName: string, 
+        mimeType: string, 
+        size: number, 
+        base64Data: string, 
+        chatType: 'dm' | 'group', 
+        chatId: string, 
+        tempId: string
+    ) {
+        try {
+            const serverUrl = this.apiClient.getServerUrl();
+            const token = await this.apiClient.getToken();
+            
+            console.log('Starting file upload:', { fileName, mimeType, size, chatType, chatId });
+            
+            // Convert base64 to buffer
+            const buffer = Buffer.from(base64Data, 'base64');
+            
+            // Create form data - use File API for Node.js 18+ compatibility
+            const formData = new FormData();
+            const blob = new Blob([buffer], { type: mimeType });
+            formData.append('file', blob, fileName);
+            formData.append('fileName', fileName); // Add explicit fileName field for server
+            
+            if (chatType === 'dm') {
+                formData.append('recipientId', chatId);
+            } else {
+                formData.append('groupId', chatId);
+            }
+            
+            console.log('Sending upload request to:', `${serverUrl}/api/files/upload`);
+            
+            const response = await fetch(`${serverUrl}/api/files/upload`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: formData,
+            });
+            
+            console.log('Upload response status:', response.status);
+            
+            if (!response.ok) {
+                const data = await response.json() as { error?: string };
+                console.error('Upload error response:', data);
+                throw new Error(data.error || 'Upload failed');
+            }
+            
+            const data = await response.json() as any;
+            console.log('Upload success, full response data:', JSON.stringify(data));
+            console.log('Upload success, message:', data.message);
+            
+            if (data.message) {
+                this.postMessage({ type: 'messageSent', message: data.message, tempId });
+            } else {
+                console.warn('Upload success but no message returned', data);
+                // Fallback? If we have a file but no message, maybe we construct one?
+                // But for now let's just log it.
+            }
+        } catch (error) {
+            console.error('Upload exception:', error);
+            const errorMessage = error instanceof Error ? error.message : 'Failed to upload file';
+            this.postMessage({ type: 'error', error: errorMessage, tempId });
+            vscode.window.showErrorMessage(errorMessage);
+        }
+    }
+
+    private async _openFileInVscode(fileId: string, filename: string) {
+        try {
+            const serverUrl = this.apiClient.getServerUrl();
+            const token = await this.apiClient.getToken();
+            
+            const response = await fetch(`${serverUrl}/api/files/${fileId}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to download file');
+            }
+            
+            const arrayBuffer = await response.arrayBuffer();
+            const content = Buffer.from(arrayBuffer).toString('utf-8');
+            
+            // Get extension for language detection
+            const ext = filename.split('.').pop()?.toLowerCase() || '';
+            const langMap: Record<string, string> = {
+                'js': 'javascript', 'ts': 'typescript', 'tsx': 'typescriptreact', 'jsx': 'javascriptreact',
+                'py': 'python', 'rb': 'ruby', 'java': 'java', 'c': 'c', 'cpp': 'cpp', 'h': 'c',
+                'cs': 'csharp', 'go': 'go', 'rs': 'rust', 'php': 'php', 'html': 'html', 'css': 'css',
+                'scss': 'scss', 'json': 'json', 'xml': 'xml', 'yaml': 'yaml', 'yml': 'yaml',
+                'md': 'markdown', 'txt': 'plaintext', 'sql': 'sql', 'sh': 'shellscript', 'bash': 'shellscript',
+                'env': 'properties', 'gitignore': 'ignore', 'ps1': 'powershell', 'bat': 'bat', 'cmd': 'bat'
+            };
+            const language = langMap[ext] || 'plaintext';
+            
+            const doc = await vscode.workspace.openTextDocument({
+                content,
+                language,
+            });
+            
+            await vscode.window.showTextDocument(doc, {
+                preview: true,
+                viewColumn: vscode.ViewColumn.Active,
+            });
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Failed to open file';
+            vscode.window.showErrorMessage(errorMessage);
+        }
+    }
+
+    private async _downloadFile(fileId: string, filename: string) {
+        try {
+            const serverUrl = this.apiClient.getServerUrl();
+            const token = await this.apiClient.getToken();
+            
+            const response = await fetch(`${serverUrl}/api/files/${fileId}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to download file');
+            }
+            
+            const arrayBuffer = await response.arrayBuffer();
+            const buffer = Buffer.from(arrayBuffer);
+            
+            // Ask user where to save
+            const saveUri = await vscode.window.showSaveDialog({
+                defaultUri: vscode.Uri.file(filename),
+                saveLabel: 'Save File',
+            });
+            
+            if (saveUri) {
+                await vscode.workspace.fs.writeFile(saveUri, buffer);
+                vscode.window.showInformationMessage(`File saved to ${saveUri.fsPath}`);
+            }
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Failed to download file';
+            vscode.window.showErrorMessage(errorMessage);
         }
     }
 

@@ -42,6 +42,14 @@ export async function GET(request: Request, { params }: RouteParams) {
         sender: {
           select: { id: true, username: true, avatarUrl: true },
         },
+        file: {
+          select: {
+            id: true,
+            originalName: true,
+            mimeType: true,
+            size: true,
+          },
+        },
       },
     });
 
@@ -106,6 +114,14 @@ export async function POST(request: Request, { params }: RouteParams) {
       include: {
         sender: {
           select: { id: true, username: true, avatarUrl: true },
+        },
+        file: {
+          select: {
+            id: true,
+            originalName: true,
+            mimeType: true,
+            size: true,
+          },
         },
       },
     });

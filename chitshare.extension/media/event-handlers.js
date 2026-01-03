@@ -147,6 +147,9 @@ function handleMessagesUpdate(message) {
 }
 
 function handleMessageSent(message) {
+    // Debug: Log what's received from server after file upload
+    console.log('handleMessageSent received:', JSON.stringify(message, null, 2));
+    
     // Update temporary message with real one
     if (message.tempId) {
         const idx = state.messages.findIndex(m => m.id === message.tempId);
@@ -371,6 +374,8 @@ export function attachChatListeners() {
     sendBtn.addEventListener('click', sendMessage);
 
     setupCodeBlockListeners();
+    setupDragDropListeners();
+    setupFileActionListeners();
 
     // Request highlighting
     document.querySelectorAll('.code-block').forEach(block => {
@@ -392,6 +397,133 @@ export function attachChatListeners() {
     if (messagesContainer) {
         messagesContainer.addEventListener('scroll', handleScroll);
     }
+}
+
+function setupDragDropListeners() {
+    const chatContainer = document.getElementById('chatContainer');
+    const dropZoneOverlay = document.getElementById('dropZoneOverlay');
+    
+    if (!chatContainer || !dropZoneOverlay) return;
+    
+    let dragCounter = 0;
+    
+    chatContainer.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter++;
+        if (e.dataTransfer.types.includes('Files')) {
+            dropZoneOverlay.classList.add('active');
+        }
+    });
+    
+    chatContainer.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter--;
+        if (dragCounter === 0) {
+            dropZoneOverlay.classList.remove('active');
+        }
+    });
+    
+    chatContainer.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    });
+    
+    chatContainer.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter = 0;
+        dropZoneOverlay.classList.remove('active');
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            uploadFile(files[0]);
+        }
+    });
+}
+
+function uploadFile(file) {
+    console.log('uploadFile called with:', file.name, file.size, file.type);
+    
+    if (!state.currentChat) {
+        console.log('No current chat, aborting upload');
+        return;
+    }
+    
+    const tempId = 'file-' + Date.now() + '-' + uuidv4();
+    const tempMessage = {
+        id: tempId,
+        content: file.name,
+        type: 'file',
+        createdAt: new Date().toISOString(),
+        sender: state.currentUser,
+        status: 'pending',
+        file: {
+            id: tempId,
+            originalName: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            size: file.size
+        }
+    };
+
+    state.messages.push(tempMessage);
+    appendMessages([tempMessage]);
+    scrollToBottom();
+
+    // Send file to extension for upload
+    const reader = new FileReader();
+    reader.onerror = (e) => {
+        console.error('FileReader error:', e);
+    };
+    reader.onload = () => {
+        console.log('FileReader loaded, sending to extension');
+        const base64 = reader.result.split(',')[1];
+        console.log('Base64 length:', base64?.length || 0);
+        vscode.postMessage({
+            type: 'uploadFile',
+            fileName: file.name,
+            mimeType: file.type || 'application/octet-stream',
+            size: file.size,
+            data: base64,
+            chatType: state.currentChat.type,
+            chatId: state.currentChat.id,
+            tempId: tempId
+        });
+        console.log('postMessage sent to extension');
+    };
+    console.log('Starting FileReader.readAsDataURL');
+    reader.readAsDataURL(file);
+}
+
+function setupFileActionListeners() {
+    // Use event delegation
+    document.addEventListener('click', (e) => {
+        const openBtn = e.target.closest('.file-open-vscode-btn');
+        const downloadBtn = e.target.closest('.file-download-btn');
+        
+        if (openBtn) {
+            e.stopPropagation();
+            const fileId = openBtn.getAttribute('data-file-id');
+            const filename = openBtn.getAttribute('data-filename');
+            vscode.postMessage({
+                type: 'openFileInVscode',
+                fileId: fileId,
+                filename: filename
+            });
+        }
+        
+        if (downloadBtn) {
+            e.stopPropagation();
+            const fileId = downloadBtn.getAttribute('data-file-id');
+            const filename = downloadBtn.getAttribute('data-filename');
+            vscode.postMessage({
+                type: 'downloadFile',
+                fileId: fileId,
+                filename: filename
+            });
+        }
+    });
 }
 
 function sendMessage() {

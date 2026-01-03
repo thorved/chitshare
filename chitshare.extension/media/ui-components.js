@@ -192,11 +192,56 @@ export function UserSearchComponent(searchResults) {
     `;
 }
 
+// File extensions that can be opened in VS Code
+const VSCODE_COMPATIBLE_EXTENSIONS = [
+    'txt', 'md', 'json', 'xml', 'yaml', 'yml', 'csv',
+    'js', 'ts', 'jsx', 'tsx', 'py', 'java', 'c', 'cpp', 'h', 'cs', 'go', 'rs', 'rb', 'php', 'html', 'css', 'scss', 'sql',
+    'env', 'gitignore', 'editorconfig', 'prettierrc', 'eslintrc', 'sh', 'bash', 'zsh', 'ps1', 'bat', 'cmd'
+];
+
+function isVscodeCompatible(filename) {
+    const ext = filename.split('.').pop()?.toLowerCase() || '';
+    return VSCODE_COMPATIBLE_EXTENSIONS.includes(ext);
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+export function FileMessageComponent(file, isOwn) {
+    const canOpenInVscode = isVscodeCompatible(file.originalName);
+    
+    return `
+        <div class="file-message ${isOwn ? 'own' : ''}">
+            <div class="file-icon">📁</div>
+            <div class="file-info">
+                <div class="file-name">${escapeHtml(file.originalName)}</div>
+                <div class="file-size">${formatFileSize(file.size)}</div>
+            </div>
+            <div class="file-actions">
+                ${canOpenInVscode ? `
+                    <button class="file-action-btn file-open-vscode-btn" data-file-id="${file.id}" data-filename="${escapeAttr(file.originalName)}" title="Open in VS Code">
+                        📝
+                    </button>
+                ` : ''}
+                <button class="file-action-btn file-download-btn" data-file-id="${file.id}" data-filename="${escapeAttr(file.originalName)}" title="Download">
+                    ⬇️
+                </button>
+            </div>
+        </div>
+    `;
+}
+
 export function MessageComponent(msg, currentUser) {
     const isOwn = currentUser && msg.sender.id === currentUser.id;
     let statusClass = '';
     if (msg.status === 'pending') statusClass = ' pending';
     if (msg.status === 'error') statusClass = ' error';
+    
+    const isFile = msg.type === 'file' && msg.file;
 
     // We need a way to increment codeBlockCounter or generate unique IDs if this is called in isolation
     // The current formatMessageContent uses a closure or passes a generator.
@@ -205,7 +250,7 @@ export function MessageComponent(msg, currentUser) {
     // formatMessageContent generates IDs. Let's make it robust.
     
     return `
-        <div class="message ${isOwn ? 'own' : ''}${statusClass}" data-id="${msg.id}">
+        <div class="message ${isOwn ? 'own' : ''}${statusClass}${isFile ? ' file-type' : ''}" data-id="${msg.id}">
             <div class="message-avatar">
                 ${msg.sender.avatarUrl 
                     ? `<img src="${msg.sender.avatarUrl}" alt="">` 
@@ -213,7 +258,7 @@ export function MessageComponent(msg, currentUser) {
             </div>
             <div class="message-content">
                 ${!isOwn ? `<div class="message-sender">${escapeHtml(msg.sender.username)}</div>` : ''}
-                <div class="message-bubble">${formatMessageContent(msg.content)}</div>
+                <div class="message-bubble">${isFile ? FileMessageComponent(msg.file, isOwn) : formatMessageContent(msg.content)}</div>
                 <div class="message-time">${formatTime(msg.createdAt)}</div>
                 ${msg.status === 'error' ? `
                     <div class="message-actions">
@@ -236,7 +281,14 @@ export function ChatComponent(currentChat, messages, currentUser) {
     const messagesHtml = messages.map(msg => MessageComponent(msg, currentUser)).join('');
 
     return `
-        <div class="app-container">
+        <div class="app-container" id="chatContainer">
+            <!-- Drop zone overlay -->
+            <div class="drop-zone-overlay" id="dropZoneOverlay">
+                <div class="drop-zone-content">
+                    <div class="drop-zone-icon">📁</div>
+                    <div class="drop-zone-text">Drop file to send</div>
+                </div>
+            </div>
             <div class="chat-header">
                 <button class="chat-header-back" id="backBtn">
                     ←

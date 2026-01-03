@@ -37,6 +37,12 @@ export interface Message {
         username: string;
         avatarUrl: string | null;
     };
+    file?: {
+        id: string;
+        originalName: string;
+        mimeType: string;
+        size: number;
+    };
 }
 
 export interface ChatTarget {

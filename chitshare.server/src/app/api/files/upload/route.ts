@@ -5,7 +5,7 @@ import { writeFile, mkdir } from "fs/promises";
 import { join } from "path";
 import { randomUUID } from "crypto";
 
-const UPLOAD_DIR = join(process.cwd(), "uploads");
+const UPLOAD_DIR = join(process.cwd(), "data");
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
 
 // Ensure upload directory exists
@@ -23,8 +23,13 @@ export async function POST(request: Request) {
     const user = await requireAuth(request);
 
     const formData = await request.formData();
-    const file = formData.get("file") as File | null;
+    const file = formData.get("file") as Blob | null;
     const groupId = formData.get("groupId") as string | null;
+    const recipientId = formData.get("recipientId") as string | null; // For DM file sharing
+    
+    // Get filename - either from File object's name property or formData's fileName field
+    const fileNameFromForm = formData.get("fileName") as string | null;
+    const originalName = (file as File)?.name || fileNameFromForm || `file-${randomUUID()}`;
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -55,7 +60,7 @@ export async function POST(request: Request) {
     await ensureUploadDir();
 
     // Generate unique filename
-    const ext = file.name.split(".").pop() || "";
+    const ext = originalName.split(".").pop() || "";
     const filename = `${randomUUID()}.${ext}`;
     const filepath = join(UPLOAD_DIR, filename);
 
@@ -63,18 +68,72 @@ export async function POST(request: Request) {
     const bytes = await file.arrayBuffer();
     await writeFile(filepath, Buffer.from(bytes));
 
-    // Save to database
+    // If this is a chat file (has recipientId or groupId), create a message first
+    let messageId: string | undefined;
+    
+    if (recipientId || groupId) {
+      const message = await prisma.message.create({
+        data: {
+          content: originalName, // Store original filename as content
+          type: "file",
+          senderId: user.id,
+          receiverId: recipientId || undefined,
+          groupId: groupId || undefined,
+        },
+      });
+      messageId = message.id;
+    }
+
+    // Save file to database
     const dbFile = await prisma.file.create({
       data: {
         filename,
-        originalName: file.name,
+        originalName: originalName,
         mimeType: file.type || "application/octet-stream",
         size: file.size,
         path: filepath,
         uploaderId: user.id,
         groupId: groupId || undefined,
+        messageId: messageId,
       },
     });
+
+    // If this was a chat upload, return the full message with file info
+    if (messageId) {
+      const fullMessage = await prisma.message.findUnique({
+        where: { id: messageId },
+        include: {
+          sender: {
+            select: { id: true, username: true, avatarUrl: true },
+          },
+          file: {
+            select: {
+              id: true,
+              originalName: true,
+              mimeType: true,
+              size: true,
+            },
+          },
+        },
+      });
+
+      // Debug: log what we're returning
+      console.log("Upload response - fullMessage:", JSON.stringify(fullMessage, null, 2));
+
+      return NextResponse.json(
+        {
+          message: fullMessage,
+          file: {
+            id: dbFile.id,
+            filename: dbFile.originalName,
+            mimeType: dbFile.mimeType,
+            size: dbFile.size,
+            createdAt: dbFile.createdAt,
+          },
+        },
+        { status: 201 },
+      );
+    }
 
     return NextResponse.json(
       {
