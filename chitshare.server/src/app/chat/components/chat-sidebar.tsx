@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -16,6 +16,7 @@ import {
   Settings,
   Search,
 } from "lucide-react";
+import { toast } from "sonner";
 
 interface User {
   id: string;
@@ -49,35 +50,86 @@ interface Group {
 
 export default function ChatSidebar({ user }: { user: User }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
   const [activeTab, setActiveTab] = useState<"dms" | "groups">("dms");
   const [search, setSearch] = useState("");
+  
+  // Track previous conversations to detect new messages
+  const prevConversationsRef = useRef<Map<string, string>>(new Map());
+  const isInitialLoad = useRef(true);
 
-  useEffect(() => {
-    fetchConversations();
-    fetchGroups();
+  const getToken = useCallback(() => {
+    return document.cookie
+      .split("; ")
+      .find((row) => row.startsWith("auth_token="))
+      ?.split("=")[1];
   }, []);
 
-  async function fetchConversations() {
+  const fetchConversations = useCallback(async () => {
     try {
-      const token = document.cookie
-        .split("; ")
-        .find((row) => row.startsWith("auth_token="))
-        ?.split("=")[1];
-
       const res = await fetch("/api/messages/conversations", {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${getToken()}` },
       });
 
       if (res.ok) {
         const data = await res.json();
-        setConversations(data.conversations || []);
+        const newConversations: Conversation[] = data.conversations || [];
+        
+        // Check for new messages in non-active chats
+        if (!isInitialLoad.current) {
+          newConversations.forEach((conv) => {
+            const prevTimestamp = prevConversationsRef.current.get(conv.user.id);
+            const currentTimestamp = conv.lastMessage?.createdAt;
+            const isActiveChat = pathname === `/chat/dm/${conv.user.id}`;
+            
+            // If there's a new message and we're not in that chat
+            if (currentTimestamp && prevTimestamp && currentTimestamp !== prevTimestamp && !isActiveChat) {
+              const messagePreview = conv.lastMessage.content.length > 50 
+                ? conv.lastMessage.content.substring(0, 50) + "..." 
+                : conv.lastMessage.content;
+              
+              toast(`New message from ${conv.user.username}`, {
+                description: messagePreview,
+                action: {
+                  label: "View",
+                  onClick: () => router.push(`/chat/dm/${conv.user.id}`),
+                },
+                duration: 5000,
+              });
+            }
+          });
+        }
+        
+        // Update the ref with current timestamps
+        const newMap = new Map<string, string>();
+        newConversations.forEach((conv) => {
+          if (conv.lastMessage?.createdAt) {
+            newMap.set(conv.user.id, conv.lastMessage.createdAt);
+          }
+        });
+        prevConversationsRef.current = newMap;
+        isInitialLoad.current = false;
+        
+        setConversations(newConversations);
       }
     } catch (error) {
       console.error("Failed to fetch conversations:", error);
     }
-  }
+  }, [getToken, pathname, router]);
+
+  useEffect(() => {
+    fetchConversations();
+    fetchGroups();
+  }, [fetchConversations]);
+
+  // Poll for new messages every 3 seconds
+  useEffect(() => {
+    const interval = setInterval(fetchConversations, 3000);
+    return () => clearInterval(interval);
+  }, [fetchConversations]);
+
 
   async function fetchGroups() {
     try {
