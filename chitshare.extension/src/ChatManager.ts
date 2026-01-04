@@ -58,7 +58,6 @@ export class ChatManager {
     private pollTimer: NodeJS.Timeout | null = null;
     private currentChat: ChatTarget | null = null;
     private knownMessageIds: Set<string> = new Set();
-    private lastPollTime: string | null = null;
     private lastConversationMessageIds: Map<string, string> = new Map();
     private onMessagesUpdateCallback: ((messages: Message[]) => void) | null = null;
     private onNewMessagesCallback: ((messages: Message[]) => void) | null = null;
@@ -274,31 +273,7 @@ export class ChatManager {
 
         this.pollTimer = setInterval(async () => {
             try {
-                // Check if we need to poll (lightweight check)
-                let shouldFetch = false;
-                
-                try {
-                    const url = this.lastPollTime 
-                        ? `/api/notifications/status?since=${encodeURIComponent(this.lastPollTime)}`
-                        : `/api/notifications/status`;
-
-                    const status = await this.apiClient.request<{ hasUpdates: boolean; timestamp: string }>(url);
-                    shouldFetch = status.hasUpdates;
-                    
-                    if (status.timestamp) {
-                        this.lastPollTime = status.timestamp;
-                    }
-                } catch (e) {
-                    // On error, log and maybe skip this interval
-                    console.error('Poll check failed:', e);
-                    // We don't force fetch on error to avoid compounding server issues
-                }
-
-                if (!shouldFetch) {
-                    return;
-                }
-
-                // 1. Poll Conversations List (Status updates, unread counts)
+                // 1. Always poll conversations list for real-time updates
                 if (this.onConversationsUpdateCallback) {
                     const [conversations, groups] = await Promise.all([
                         this.getConversations(),
@@ -311,7 +286,7 @@ export class ChatManager {
                     this.onConversationsUpdateCallback(conversations, groups);
                 }
 
-                // 2. Poll Active Chat (New messages)
+                // 2. Poll Active Chat (New messages) - always fetch for real-time updates
                 if (this.currentChat) {
                     let messages: Message[];
                     if (this.currentChat.type === 'dm') {
@@ -335,7 +310,6 @@ export class ChatManager {
                         if (this.onNewMessagesCallback) {
                             this.onNewMessagesCallback(newMessages);
                         }
-
                     }
                 }
             } catch (error) {

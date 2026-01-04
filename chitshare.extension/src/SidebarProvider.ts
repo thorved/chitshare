@@ -1,6 +1,31 @@
 import * as vscode from 'vscode';
 import { ApiClient, User } from './ApiClient';
-import { ChatManager, Message, ChatTarget } from './ChatManager';
+import { ChatManager, Message, ChatTarget, Conversation, Group } from './ChatManager';
+
+// Cache keys for persistent storage
+const CACHE_KEYS = {
+    CONVERSATIONS: 'chitshare.cache.conversations',
+    GROUPS: 'chitshare.cache.groups',
+    MESSAGES_PREFIX: 'chitshare.cache.messages.',
+    CURRENT_USER: 'chitshare.cache.currentUser',
+};
+
+interface CachedConversations {
+    data: Conversation[];
+    timestamp: number;
+}
+
+interface CachedGroups {
+    data: Group[];
+    timestamp: number;
+}
+
+interface CachedMessages {
+    data: Message[];
+    chat: ChatTarget;
+    hasMore: boolean;
+    timestamp: number;
+}
 
 export class SidebarProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'chitshare.chatView';
@@ -26,6 +51,11 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
 
         // Set up new messages callback (incremental, no flicker)
         this.chatManager.onNewMessages((messages) => {
+            // Update cache with new messages
+            const currentChat = this.chatManager.getCurrentChat();
+            if (currentChat) {
+                this._appendMessagesToCache(currentChat.type, currentChat.id, messages);
+            }
             this.postMessage({ type: 'newMessages', messages });
         });
 
@@ -53,10 +83,84 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             });
         });
 
-        // Set up conversations polling callback
+        // Set up conversations polling callback - also update cache
         this.chatManager.onConversationsUpdate((conversations, groups) => {
+            // Update cache when polling brings new data
+            this._cacheConversations(conversations);
+            this._cacheGroups(groups);
             this.postMessage({ type: 'conversations', conversations, groups });
         });
+    }
+
+    // ============ Cache Methods ============
+
+    private _cacheConversations(conversations: Conversation[]): void {
+        const cached: CachedConversations = {
+            data: conversations,
+            timestamp: Date.now(),
+        };
+        this._context.globalState.update(CACHE_KEYS.CONVERSATIONS, cached);
+    }
+
+    private _getCachedConversations(): CachedConversations | undefined {
+        return this._context.globalState.get<CachedConversations>(CACHE_KEYS.CONVERSATIONS);
+    }
+
+    private _cacheGroups(groups: Group[]): void {
+        const cached: CachedGroups = {
+            data: groups,
+            timestamp: Date.now(),
+        };
+        this._context.globalState.update(CACHE_KEYS.GROUPS, cached);
+    }
+
+    private _getCachedGroups(): CachedGroups | undefined {
+        return this._context.globalState.get<CachedGroups>(CACHE_KEYS.GROUPS);
+    }
+
+    private _cacheMessages(chatType: 'dm' | 'group', chatId: string, messages: Message[], chat: ChatTarget, hasMore: boolean): void {
+        const key = `${CACHE_KEYS.MESSAGES_PREFIX}${chatType}_${chatId}`;
+        const cached: CachedMessages = {
+            data: messages,
+            chat,
+            hasMore,
+            timestamp: Date.now(),
+        };
+        this._context.globalState.update(key, cached);
+    }
+
+    private _getCachedMessages(chatType: 'dm' | 'group', chatId: string): CachedMessages | undefined {
+        const key = `${CACHE_KEYS.MESSAGES_PREFIX}${chatType}_${chatId}`;
+        return this._context.globalState.get<CachedMessages>(key);
+    }
+
+    private _appendMessagesToCache(chatType: 'dm' | 'group', chatId: string, newMessages: Message[]): void {
+        const existing = this._getCachedMessages(chatType, chatId);
+        if (existing) {
+            // Append new messages, avoiding duplicates
+            const existingIds = new Set(existing.data.map(m => m.id));
+            const uniqueNewMessages = newMessages.filter(m => !existingIds.has(m.id));
+            
+            if (uniqueNewMessages.length > 0) {
+                const updatedMessages = [...existing.data, ...uniqueNewMessages];
+                this._cacheMessages(chatType, chatId, updatedMessages, existing.chat, existing.hasMore);
+            }
+        }
+    }
+
+    private _cacheCurrentUser(user: User): void {
+        this._context.globalState.update(CACHE_KEYS.CURRENT_USER, user);
+    }
+
+    private _getCachedCurrentUser(): User | undefined {
+        return this._context.globalState.get<User>(CACHE_KEYS.CURRENT_USER);
+    }
+
+    private _clearCache(): void {
+        this._context.globalState.update(CACHE_KEYS.CONVERSATIONS, undefined);
+        this._context.globalState.update(CACHE_KEYS.GROUPS, undefined);
+        this._context.globalState.update(CACHE_KEYS.CURRENT_USER, undefined);
+        // Note: Individual message caches are not cleared here - they will be stale but harmless
     }
 
     public resolveWebviewView(
@@ -217,17 +321,49 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         }
 
         if (isLoggedIn) {
-            try {
-                this.currentUser = await this.apiClient.getCurrentUser();
+            // Try to send cached user data immediately for instant UI
+            const cachedUser = this._getCachedCurrentUser();
+            if (cachedUser) {
+                this.currentUser = cachedUser;
                 this.postMessage({
                     type: 'init',
                     serverConfigured: true,
                     isLoggedIn: true,
-                    user: this.currentUser,
+                    user: cachedUser,
+                    fromCache: true,
                 });
+                
+                // Also send cached conversations immediately
+                const cachedConvs = this._getCachedConversations();
+                const cachedGroups = this._getCachedGroups();
+                if (cachedConvs || cachedGroups) {
+                    this.postMessage({
+                        type: 'conversations',
+                        conversations: cachedConvs?.data || [],
+                        groups: cachedGroups?.data || [],
+                        fromCache: true,
+                    });
+                }
+            }
+
+            // Fetch fresh data in background
+            try {
+                this.currentUser = await this.apiClient.getCurrentUser();
+                this._cacheCurrentUser(this.currentUser);
+                
+                // Only send update if we didn't have cache (or user wants fresh)
+                if (!cachedUser) {
+                    this.postMessage({
+                        type: 'init',
+                        serverConfigured: true,
+                        isLoggedIn: true,
+                        user: this.currentUser,
+                    });
+                }
             } catch {
                 // Token might be invalid
                 await this.apiClient.clearToken();
+                this._clearCache();
                 this.postMessage({ type: 'init', serverConfigured: true, isLoggedIn: false });
             }
         } else {
@@ -239,6 +375,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
         try {
             const user = await this.apiClient.login(email, password);
             this.currentUser = user;
+            this._cacheCurrentUser(user); // Cache user for instant load next time
             this.postMessage({ type: 'loginSuccess', user });
             vscode.window.showInformationMessage(`Welcome, ${user.username}!`);
         } catch (error) {
@@ -252,6 +389,7 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             await this.apiClient.logout();
             this.currentUser = null;
             this.chatManager.setCurrentChat(null);
+            this._clearCache(); // Clear all cached data on logout
             this.postMessage({ type: 'logout' });
             vscode.window.showInformationMessage('Logged out successfully');
         } catch (error) {
@@ -262,22 +400,63 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
     }
 
     private async _loadConversations() {
+        // Send cached data immediately for instant UI
+        const cachedConvs = this._getCachedConversations();
+        const cachedGroups = this._getCachedGroups();
+        
+        if (cachedConvs || cachedGroups) {
+            this.postMessage({
+                type: 'conversations',
+                conversations: cachedConvs?.data || [],
+                groups: cachedGroups?.data || [],
+                fromCache: true,
+            });
+        }
+
+        // Start polling immediately so updates come in real-time
+        this.chatManager.startPolling();
+
+        // Fetch fresh data in background
         try {
             const [conversations, groups] = await Promise.all([
                 this.chatManager.getConversations(),
                 this.chatManager.getGroups(),
             ]);
-            this.postMessage({ type: 'conversations', conversations, groups });
             
-            // Start polling if not already
-            this.chatManager.startPolling();
+            // Update cache
+            this._cacheConversations(conversations);
+            this._cacheGroups(groups);
+            
+            this.postMessage({ type: 'conversations', conversations, groups });
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Failed to load conversations';
-            this.postMessage({ type: 'error', error: errorMessage });
+            // Only show error if we didn't have cached data
+            if (!cachedConvs && !cachedGroups) {
+                this.postMessage({ type: 'error', error: errorMessage });
+            }
         }
     }
 
     private async _loadMessages(chatType: 'dm' | 'group', chatId: string) {
+        // Send cached messages immediately for instant UI
+        const cachedMessages = this._getCachedMessages(chatType, chatId);
+        let sentCached = false;
+        
+        if (cachedMessages) {
+            // Initialize known messages from cache
+            this.chatManager.initializeKnownMessages(cachedMessages.data);
+            this.chatManager.setCurrentChat(cachedMessages.chat);
+            this.postMessage({
+                type: 'messages',
+                messages: cachedMessages.data,
+                chat: cachedMessages.chat,
+                hasMore: cachedMessages.hasMore,
+                fromCache: true,
+            });
+            sentCached = true;
+        }
+
+        // Fetch fresh data in background
         try {
             let messages: Message[];
             let chat: ChatTarget;
@@ -311,13 +490,19 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
                 };
             }
 
+            // Update cache
+            this._cacheMessages(chatType, chatId, messages, chat, hasMore);
+
             // Initialize known messages for incremental updates
             this.chatManager.initializeKnownMessages(messages);
             this.chatManager.setCurrentChat(chat);
             this.postMessage({ type: 'messages', messages, chat, hasMore });
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Failed to load messages';
-            this.postMessage({ type: 'error', error: errorMessage });
+            // Only show error if we didn't have cached data
+            if (!sentCached) {
+                this.postMessage({ type: 'error', error: errorMessage });
+            }
         }
     }
 
@@ -357,6 +542,9 @@ export class SidebarProvider implements vscode.WebviewViewProvider {
             } else {
                 message = await this.chatManager.sendGroupMessage(chatId, content);
             }
+
+            // Update cache with sent message
+            this._appendMessagesToCache(chatType, chatId, [message]);
 
             this.postMessage({ type: 'messageSent', message, tempId });
         } catch (error) {
